@@ -1,0 +1,3261 @@
+openapi: 3.0.1
+
+servers:
+    - url: https://{server}/v2024.01
+      description: Consent manager for the tenant
+      variables:
+          server:
+              default: cm.*
+              description: The server that the API is hosted on.
+
+info:
+    title: Consent Manager Apis
+    description: |
+        This document provides the OAS3 specification for the APIs provided by the Ozone Consent Manager.
+        These APIs are implemented by Ozone and should be called by the ASPSP to find, modify and delete consents.
+        #### Changes in Release 2024.01.00
+        Introduced new object in samaPaymentPatchBody -> `consentBody.Meta` in PATCH `/consents/{consentId}` API.
+        
+        Introduced new object called `instruction` in response body of PATCH `/payment-log/{paymentId}` API and response body of GET `/payment-log` API as per KSA requirements.
+        
+        Updated the request body of PATCH `/payment-log/{paymentId}` API
+          - Added a new field in samaPaymentPatchBody -> `paymentResponse.rejectionDetails`
+              - Added attribute `Reason`
+              - Added  attribute `Message`
+          - Added a new object in samaPaymentPatchBody -> `paymentResponse.instruction`
+        Updated the description of GET '/consents/{consentId}' with brazil consent type
+        Added 'ozoneSupplementaryInformation' and 'updatedAt' field in GET '/consents/{consentId}'
+        
+        
+        #### Changes in Release 2023.49
+        Updated the request body of PATCH `/consents/{consentId}` API
+          - Added a new field in samaPatchBody -> `consentBody.Data.ConsentFlags`
+        
+        Updated the request body of PATCH `/consents/{consentId}` API
+          - Request body of brcbPatchBody
+            - Added 'REVOKED' as a new enum  -> `consentBody.data.status`
+            - Added new enums in `consentBody.data.rejection.code`
+            - Added a new field 'rejectedFrom' in `consentBody.data.rejection`
+            - Added a new field 'detail' in `consentBody.data.rejection`
+            - Added `consentBody.data.revocation`
+            - Added `consentBody.data.riskSignals`
+            - Added `consentBody.data.creditors`
+            - Added `consentBody.data.startDateTime`
+            - Added `consentBody.data.automatic`
+        
+        #### Changes in Release 2023.48
+        
+        ##### Payment-Log Patch
+        - Introduced payment-log patch API `/payment-log/{payment-id}`
+        
+        ##### Consent Patch
+        Updated `/consents/{consentId}` API to support sama rc-1 AIS changes
+        
+        - `consentBody.Data.Status` changed to `consentBody.Data.ConsentStatus`
+        - `consentBody.Data.StatusUpdateDateTime` changed to `consentBody.Data.ConsentStatusUpdateDateTime`
+        
+        
+        #### Changes in Release 2023.33
+        
+        ##### Change in version numbering
+        The Consent Manager version numbering has been changed to align with the Ozone version numbering.
+        This follows the Ozone release number in YYYY.WW format
+        
+        ##### Consent Groups
+        The Consent Manager now supports the concept of consent groups. A consent group is a collection of consents that are related to each other.
+        For example, for CDR, the consent group id is used to group together consents that are related to the same arrangement and the consent group id is the arrangement_id
+        
+        In order to support this functionality, the following changes have been made to the Consent Manager APIs:
+        - A new `consentGroupId` field has been added to the `newConsent` object. This field is used to specify the consent group id that the consent belongs to.
+        - A new API has been added to retrieve all the consents that belong to a consent group. The API is `/consent-groups/{consentGroupId}/consents`
+        
+        ##### Consent Status
+        The Consent Manager now supports the concept of consent status. The consent status is used to indicate the current state of the consent.
+        
+        In earlier versions, the disposition of this field depended on the underlying standard. For example, for OBIE, the consent status was stored in the `consentBody.Data.Status` field. For BOBF, the consent status was stored in the `consentBody.Data.Status` field. From this version, the status value is copied across and kept in sync with the `status` field.
+        
+        As a result, we have introduced the status field as a query criteria to the following APIs:
+        - `/consents`
+        - `/consent-groups/{consentGroupId}/consents`
+        - `/psu/{userId}/consents`
+        - `/accounts/{accountId}/consents`
+        
+        ##### Pagination parameters
+        Added clarity on the values that pagination parameters may take
+    
+    
+    
+
+    contact:
+        name: Contact your Ozone representative
+        url: https://ozoneapi.com
+
+    version: Version 2024.01
+
+tags:
+    - name: consents
+    - name: consent-groups
+    - name: funds-confirmations
+    - name: payments
+    - name: events
+
+paths:
+    /consents:
+        post:
+            tags:
+                - consents
+            summary: Creates a new consent
+            description: |
+                Used by Ozone to create a new consent using a Heimdall interaction.
+
+            operationId: addConsent
+            requestBody:
+                description: |
+                    An end-point for creating a new consent.
+                    
+                    The consent is created from a Heimdall Interaction that is passed in as the request body.
+                    
+                    The Consent Manager processes this as a RAR request using one or more plugins to introspect and create the appropriate consent.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+
+            responses:
+                '201':
+                    description: |
+                        Indicates the successful creation of a consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ConsentPostResponse"
+
+                '400':
+                    description: |
+                        Indicates a failure to create the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+        get:
+            tags:
+                - consents
+            summary: Retrieves all the consents that meet the search criteria
+            description: |
+                Retrieves an array of consents that meets the search criteria.
+                
+                If no consents could be found, then an empty array is returned.
+
+            operationId: getAllConsents
+
+            parameters:
+                - name: updatedAt
+                  in: query
+                  schema:
+                      type: number
+                  required: false
+                  description: |
+                      Select only consents updated after the specified time
+
+                - $ref: "#/components/parameters/consentType"
+                - $ref: "#/components/parameters/status"
+                - $ref: "#/components/parameters/page"
+                - $ref: "#/components/parameters/pageSize"
+
+            responses:
+                '200':
+                    description: |
+                        Successful response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/multiConsentResponse"
+                '400':
+                    description: Indicates a failure to retrieve the consents
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /consents/{consentId}:
+        get:
+            tags:
+                - consents
+            summary: Retrieve a consent by its id
+            description: Retrieves a consent by its id.
+            operationId: getConsentsByConsentId
+            parameters:
+                - $ref: "#/components/parameters/consentId"
+
+            responses:
+                '200':
+                    description: successful operation
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - data
+                                    - meta
+                                properties:
+                                    data:
+                                        $ref: "#/components/schemas/consent"
+                                    meta:
+                                        $ref: "#/components/schemas/meta"
+
+                '400':
+                    description: |
+                        Indicates a failure to retrieve the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+        patch:
+            tags:
+                - consents
+            summary: Patches one or more fields in a consent
+            description: |
+                This operation allows an ASPSP modify fields within a consent's `consentBody`.
+                
+                Typically, this API would be called after the PSU has authorised a consent. This would
+                allow the ASPSP to "patch in" the `psuIdentifier` and `accountIds` associated with the
+                consent
+            operationId: patchConsent
+            parameters:
+                - $ref: "#/components/parameters/consentId"
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/patchBody"
+
+
+            responses:
+                '204':
+                    description: An empty response
+                '400':
+                    description: |
+                        Indicates a failure to patch the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+        delete:
+            tags:
+                - consents
+            summary: deletes the specified consent
+
+            description: |
+                Deletes the specified consent.
+
+            operationId: deleteConsent
+
+            parameters:
+                - $ref: "#/components/parameters/consentId"
+
+            responses:
+                '204':
+                    description: |
+                        Successful response
+                '400':
+                    description: Indicates a failure to retrieve the consents
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /consents/{consentId}/action/revoke:
+        post:
+            tags:
+                - consents
+            summary: Revoke a consent by its id
+            description: Revoke a consent by its id.
+            operationId: revokeConsentsByConsentId
+
+            parameters:
+                - $ref: "#/components/parameters/consentId"
+
+            requestBody:
+                description: |
+                    An end-point for revoking a consent.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/RevokeConsent"
+
+            responses:
+                '204':
+                    description: |
+                        No Content
+
+                '400':
+                    description: |
+                        Indicates a failure to revoke the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /consents/{consentId}/audit:
+        get:
+            tags:
+                - consents
+            summary: Retrieve an audit of a consent by the consent's id
+            description:
+                Retrieves an audit of a consent by the consent's id.
+            operationId: getAuditConsentsByConsentId
+            parameters:
+                - $ref: "#/components/parameters/consentId"
+
+            responses:
+                '200':
+                    description: successful operation
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - data
+                                    - meta
+                                properties:
+                                    data:
+                                        type: array
+
+                                        items:
+                                            type: object
+                                            required:
+                                                - providerId
+                                                - operation
+                                                - timestamp
+                                                - fkMongoId
+                                                - fkId
+                                                - id
+                                                - ozoneInteractionId
+
+                                            properties:
+                                                providerId:
+                                                    type: string
+
+                                                operation:
+                                                    type: string
+                                                    description: |
+                                                        Like "create" or "patch"
+
+                                                timestamp:
+                                                    type: integer
+
+                                                fkMongoId:
+                                                    type: string
+                                                    description: |
+                                                        A unique identifier for the audit log in mongodb
+
+                                                fkId:
+                                                    type: string
+                                                    description: |
+                                                        A unique identifier for the consentId
+
+                                                id:
+                                                    type: string
+                                                    description: |
+                                                        A unique identifier for the audit log
+
+                                                ozoneInteractionId:
+                                                    type: string
+                                                    description: |
+                                                        The ozone interaction id assigned to the interaction that caused this changed. Useful for looking up the api-log
+
+                                                callerDetails:
+                                                    type: object
+                                                    additionalProperties: false
+                                                    properties:
+                                                        callerOrgId:
+                                                            type: string
+                                                        callerClientId:
+                                                            type: string
+                                                        callerSoftwareStatementId:
+                                                            type: string
+
+                                                patchFilter:
+                                                    type: string
+
+                                                patch:
+                                                    type: string
+                                                    description: |
+                                                        This shows what the ASPSP had "patched in" the `psuIdentifier` and `accountIds` associated with the consent
+
+                                    meta:
+                                        $ref: "#/components/schemas/meta"
+                '400':
+                    description: |
+                        Indicates a failure to retrieve the consent's audit trail
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /consent-groups/{consentGroupId}/consents:
+        get:
+            tags:
+                - consent-groups
+            summary: Retrieves consents within a consent group
+            description: |
+                Retrieves an array of consents that are within a consent group.
+                
+                If no consents could be found, then an empty array is returned.
+
+            operationId: getConsentsInConsentGroup
+
+            parameters:
+                - name: consentGroupId
+                  in: path
+                  schema:
+                      type: string
+                  required: true
+                  description: |
+                      Select consents within the consentGroupId
+
+                - $ref: "#/components/parameters/consentType"
+                - $ref: "#/components/parameters/status"
+                - $ref: "#/components/parameters/page"
+                - $ref: "#/components/parameters/pageSize"
+
+            responses:
+                '200':
+                    description: |
+                        Successful response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/multiConsentResponse"
+                '400':
+                    description: Indicates a failure to retrieve the consents
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /consent-groups/{consentGroupId}/consents/action/revoke:
+        post:
+            tags:
+                - consent-groups
+            summary: Revokes consents within a consent group
+            description: |
+                Revokes consents that are within a consent group.
+
+            operationId: revokeConsentsInConsentGroup
+
+            parameters:
+                - name: consentGroupId
+                  in: path
+                  schema:
+                      type: string
+                  required: true
+                  description: |
+                      Select consents within the consentGroupId
+
+            requestBody:
+                description: |
+                    An end-point for revoking a consent within a consent group.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/RevokeConsent"
+
+            responses:
+                '204':
+                    description: |
+                        No Content
+
+                '400':
+                    description: Indicates a failure to revoke the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /psu/{userId}/consents:
+        get:
+            tags:
+                - consents
+            summary: Retrieves all the consents associated with a given PSU
+            description: |
+                Retrieves an array of consents associated with the PSU.
+                
+                If no consents could be found associated with the PSU, then an empty array is returned.
+                
+                The userId path parameter is matched with the `psuIdentifiers.userId` field in the consent.
+            operationId: getConsents
+            parameters:
+                - $ref: "#/components/parameters/userId"
+                - $ref: "#/components/parameters/consentType"
+                - $ref: "#/components/parameters/status"
+                - $ref: "#/components/parameters/page"
+                - $ref: "#/components/parameters/pageSize"
+
+            responses:
+                '200':
+                    description: |
+                        Successful response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/multiConsentResponse"
+                '400':
+                    description: Indicates a failure to retrieve the consents
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /psu/{userId}/deleted-consents:
+        get:
+            tags:
+                - consents
+            summary: Retrieve deleted consents of a user by its id
+            description: |
+                Retrieve deleted consents of a user by its id
+            operationId: getUserIdDeletedConsents
+            parameters:
+                - $ref: "#/components/parameters/userId"
+                - $ref: "#/components/parameters/page"
+                - $ref: "#/components/parameters/pageSize"
+
+            responses:
+                '200':
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/multiConsentResponse"
+                '400':
+                    description: |
+                        Indicates a failure to retrieve the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /accounts/{accountId}/consents:
+        get:
+            tags:
+                - consents
+            summary: Retrieve consents of a account by its id
+            description: |
+                Retrieve consents of a account by its id
+            operationId: getAccountIdConsents
+            parameters:
+                - name: accountId
+                  in: path
+                  schema:
+                      type: string
+                  required: true
+                  description: Identifier for the account
+
+                - $ref: "#/components/parameters/consentType"
+                - $ref: "#/components/parameters/status"
+                - $ref: "#/components/parameters/page"
+                - $ref: "#/components/parameters/pageSize"
+
+            responses:
+                '200':
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/multiConsentResponse"
+
+                '400':
+                    description: |
+                        Indicates a failure to create the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /payment-log:
+        get:
+            tags:
+                - payments
+            summary: Retrieve a payment log by its consent id or account id
+            operationId: getAuditConsentsByConsentIdw
+            description: |
+                Either one of the query parameters can be used, not both.
+            parameters:
+                - name: consentId
+                  in: query
+                  schema:
+                      type: string
+                  required: true
+                  description: |
+                      Identifier for the consent
+
+                - name: accountId
+                  in: query
+                  schema:
+                      type: string
+                  required: true
+                  description: |
+                      Identifier for the account
+
+            responses:
+                '200':
+                    description: successful operation
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - data
+                                    - meta
+                                properties:
+                                    data:
+                                        type: array
+                                        items:
+                                            type: object
+
+                                            required:
+                                                - consentId
+                                                - paymentType
+                                                - paymentId
+                                                - idempotencyKey
+                                                - paymentResponse
+                                                - tpp
+                                                - accountId
+                                                - psuIdentifiers
+                                                - interactionId
+                                                - authorizationCode
+                                                - requestBody
+                                                - requestHeaders
+
+                                            properties:
+
+                                                consentId:
+                                                    type: string
+                                                    description: |
+                                                        A ConsentId generated by the ASPSP for the consent. This is different from the top-level `id` field which is used by Consent Manager.
+
+                                                paymentType:
+                                                    type: string
+                                                    description: The underlying payment type
+
+                                                paymentId:
+                                                    type: string
+
+                                                idempotencyKey:
+                                                    type: integer
+
+                                                paymentResponse:
+                                                    type: object
+
+                                                    properties:
+                                                        id:
+                                                            type: string
+                                                            description: |
+                                                                A unique payment for the consent in uuid-v4 format.
+
+                                                        status:
+                                                            type: string
+                                                            description: |
+                                                                The current status of the payment
+
+                                                        creationDateTime:
+                                                            type: string
+                                                            pattern: ($date-time)
+                                                            description: |
+                                                                An ISO date-time representing when the consent was created
+
+                                                        statusUpdateDateTime:
+                                                            type: string
+                                                            pattern: ($date-time)
+                                                            description: |
+                                                                An ISO date-time representing when the consent status was last updated
+
+                                                        rejectionDetails:
+                                                            description: |
+                                                                This attribute SHOULD only be returned when the resource Status represents a failed state e.g. : Rejected.
+                                                            type: object
+                                                            required:
+                                                                - Reason
+                                                            properties:
+                                                                Reason:
+                                                                    type: object
+                                                                    description: |
+                                                                        A Placeholder for any responses that support a Status
+                                                                    required:
+                                                                        - Code
+                                                                    properties:
+                                                                        Code:
+                                                                            type: string
+                                                                            description: |
+                                                                                The reason code that represents the downstream System Error.
+                                                                                **Payments**
+                                                                                
+                                                                                |Status|Reason Code|Description|
+                                                                                |----------|--|--|
+                                                                                |Rejected|KSAOB.Originator.InsufficientFunds|The PASP Debtor Account does not have sufficient funds to complete the payment|
+                                                                                |Rejected|KSAOB.Originator.AccountIssue|The Originator Account has an issue in sending the payment e.g. Account is inactive, locked, dormant|
+                                                                                |Rejected|KSAOB.Receiver.AccountIssue|The Receiver Account has an issue in receiving the payment e.g. Account is inactive, locked, dormant|
+                                                                                |Rejected|KSAOB.Originator.TransactionNotPermitted|The Originator Account is not permitted to perform the requested transaction|
+                                                                                |Rejected|KSAOB.Originator.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                                                                |Rejected|KSAOB.Receiver.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                                                                |Rejected|KSAOB.Receiver.Timeout |A timeout has occurred on the payment rails|
+                                                                                |Rejected|KSAOB.Receiver.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                                                                |Rejected|KSAOB.Originator.Other|Any other reason not specified and applicable to the Originator; details MUST be provided in the Detail field|
+                                                                                |Rejected|KSAOB.Receiver.Other|Any other reason not specified and applicable to the Receiver; details MUST be provided in the Detail field|
+                                                                                |Rejected|KSAOB.Originator.SuspectedFraud|The Originator Account has been suspended due to suspected fraud|
+                                                                                |Rejected|KSAOB.Receiver.SuspectedFraud|The Receiver Account has been suspended due to suspected fraud|
+                                                                                |Failed|KSAOB.Originator.SystemUnavailable|This is only for RTP.The payment rails or downstream system is unavailable|
+                                                                                |Cancelled|KSAOB.Receiver.CancellationAccepted|This is only for RTP.The cancellation request has been accepted by the Receiver|
+                                                                                |Expired|KSAOB.Originator.Expired|This is only for RTP.The Originator requested window for an RTP response has expired|
+                                                                                |Failed|KSAOB.Originator.CancelledBeforeSubmission|This is only for RTP.The Originator PASP has not submitted the RTP request to the Receiver PASP due to invalid information|
+                                                                            enum:
+                                                                                - "KSAOB.Originator.InsufficientFunds"
+                                                                                - "KSAOB.Originator.AccountIssue"
+                                                                                - "KSAOB.Receiver.AccountIssue"
+                                                                                - "KSAOB.Originator.TransactionNotPermitted"
+                                                                                - "KSAOB.Originator.DuplicateTransaction"
+                                                                                - "KSAOB.Receiver.DuplicateTransaction"
+                                                                                - "KSAOB.Receiver.Timeout"
+                                                                                - "KSAOB.Receiver.SystemUnavailable"
+                                                                                - "KSAOB.Originator.Other"
+                                                                                - "KSAOB.Receiver.Other"
+                                                                                - "KSAOB.Originator.SuspectedFraud"
+                                                                                - "KSAOB.Receiver.SuspectedFraud"
+                                                                                - "KSAOB.Originator.SystemUnavailable"
+                                                                                - "KSAOB.Receiver.CancellationAccepted"
+                                                                                - "KSAOB.Originator.Expired"
+                                                                                - "KSAOB.Originator.CancelledBeforeSubmission"
+                                                                        Detail:
+                                                                            type: "string"
+                                                                            description: "Further details that are specific to the Reason Code"
+                                                                    additionalProperties: false
+                                                                Message:
+                                                                    $ref: "#/components/schemas/OBMessage"
+                                                            additionalProperties: false
+
+                                                        instruction:
+                                                            type: object
+                                                            description: The current status of the payment. This is mandatory for KSA. The data will be passed without any validation.
+                                                            oneOf:
+                                                                - $ref: "#/components/schemas/KSAOBRefundInitiationInstructionResponse"
+                                                                - $ref: "#/components/schemas/KSAOBRequestToPayInitiationInstructionResponse"
+
+                                                signedResponse:
+                                                    type: string
+
+                                                tpp:
+                                                    $ref: "#/components/schemas/tpp"
+
+                                                accountId:
+                                                    type: integer
+
+                                                psuIdentifiers:
+                                                    $ref: "#/components/schemas/psuIdentifiers"
+
+                                                interactionId:
+                                                    $ref: "#/components/schemas/apiLogInteractionId"
+
+                                                authorizationCode:
+                                                    type: object
+
+                                                    properties:
+                                                        paymentId:
+                                                            type: string
+
+                                                        accessTokenHash:
+                                                            type: string
+
+                                                        currentDateTime:
+                                                            type: string
+                                                            pattern: ($date-time)
+
+                                                requestBody:
+                                                    type: object
+                                                    description: |
+                                                        Describes the fields to be patched and their corresponding values.
+                                                        
+                                                        The fields that are supported differ based on the Api standard that the consent belongs to.
+                                                    properties:
+                                                        data:
+                                                            type: object
+
+                                                            properties:
+                                                                cnpjInitiatori:
+                                                                    type: integer
+
+                                                                localInstrument:
+                                                                    type: string
+
+                                                                payment:
+                                                                    type: object
+
+                                                                    properties:
+                                                                        currency:
+                                                                            type: string
+
+                                                                        amount:
+                                                                            type: number
+
+                                                                creditorAccount:
+                                                                    type: object
+
+                                                                    properties:
+                                                                        ispb:
+                                                                            type: integer
+
+                                                                        issuer:
+                                                                            type: integer
+
+                                                                        number:
+                                                                            type: integer
+
+                                                                        accountType:
+                                                                            type: string
+
+                                                                remittanceInformation:
+                                                                    type: string
+
+                                                                cnpjInitiator:
+                                                                    type: integer
+
+                                                signedRequestBody:
+                                                    type: string
+
+                                                requestHeaders:
+                                                    type: object
+                                                    description: |
+                                                        The entire set of Http request headers that was received by Ozone from the TPP
+                                                    additionalProperties: true
+
+                                    meta:
+                                        $ref: "#/components/schemas/meta"
+                '400':
+                    description: |
+                        Indicates a failure to retrieve the payments
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /payment-log/{paymentId}:
+        patch:
+            tags:
+                - payments
+            summary: Patches one or more fields in a payment-log
+            description: |
+                This operation allows an  modify fields within a payment's `paymentResponse`.
+
+            operationId: patchPymentlog
+            parameters:
+                - $ref: "#/components/parameters/paymentId"
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/patchPaymentRecordBody"
+
+            responses:
+                '200':
+                    description: successful operation
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - data
+                                    - meta
+                                properties:
+                                    data:
+                                        type: array
+                                        items:
+                                            type: object
+
+                                            required:
+                                                - consentId
+                                                - paymentType
+                                                - paymentId
+                                                - idempotencyKey
+                                                - paymentResponse
+                                                - tpp
+                                                - accountId
+                                                - psuIdentifiers
+                                                - interactionId
+                                                - authorizationCode
+                                                - requestBody
+                                                - requestHeaders
+
+                                            properties:
+
+                                                consentId:
+                                                    type: string
+                                                    description: |
+                                                        A ConsentId generated by the ASPSP for the consent. This is different from the top-level `id` field which is used by Consent Manager.
+
+                                                paymentType:
+                                                    type: string
+                                                    description: The underlying payment type
+
+                                                paymentId:
+                                                    type: string
+
+                                                idempotencyKey:
+                                                    type: integer
+
+                                                paymentResponse:
+                                                    type: object
+
+                                                    properties:
+                                                        id:
+                                                            type: string
+                                                            description: |
+                                                                A unique payment for the consent in uuid-v4 format.
+
+                                                        status:
+                                                            type: string
+                                                            description: |
+                                                                The current status of the consent
+
+                                                        creationDateTime:
+                                                            type: string
+                                                            pattern: ($date-time)
+                                                            description: |
+                                                                An ISO date-time representing when the consent was created
+
+                                                        statusUpdateDateTime:
+                                                            type: string
+                                                            pattern: ($date-time)
+                                                            description: |
+                                                                An ISO date-time representing when the consent status was last updated
+
+                                                        rejectionDetails:
+                                                            description: |
+                                                                This attribute SHOULD only be returned when the resource Status represents a failed state e.g. : Rejected.
+                                                            type: object
+                                                            required:
+                                                                - Reason
+                                                            properties:
+                                                                Reason:
+                                                                    type: object
+                                                                    description: |
+                                                                        A Placeholder for any responses that support a Status
+                                                                    required:
+                                                                        - Code
+                                                                    properties:
+                                                                        Code:
+                                                                            type: string
+                                                                            description: |
+                                                                                The reason code that represents the downstream System Error.
+                                                                                **Payments**
+                                                                                
+                                                                                |Status|Reason Code|Description|
+                                                                                |----------|--|--|
+                                                                                |Rejected|KSAOB.Originator.InsufficientFunds|The PASP Debtor Account does not have sufficient funds to complete the payment|
+                                                                                |Rejected|KSAOB.Originator.AccountIssue|The Originator Account has an issue in sending the payment e.g. Account is inactive, locked, dormant|
+                                                                                |Rejected|KSAOB.Receiver.AccountIssue|The Receiver Account has an issue in receiving the payment e.g. Account is inactive, locked, dormant|
+                                                                                |Rejected|KSAOB.Originator.TransactionNotPermitted|The Originator Account is not permitted to perform the requested transaction|
+                                                                                |Rejected|KSAOB.Originator.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                                                                |Rejected|KSAOB.Receiver.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                                                                |Rejected|KSAOB.Receiver.Timeout |A timeout has occurred on the payment rails|
+                                                                                |Rejected|KSAOB.Receiver.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                                                                |Rejected|KSAOB.Originator.Other|Any other reason not specified and applicable to the Originator; details MUST be provided in the Detail field|
+                                                                                |Rejected|KSAOB.Receiver.Other|Any other reason not specified and applicable to the Receiver; details MUST be provided in the Detail field|
+                                                                                |Rejected|KSAOB.Originator.SuspectedFraud|The Originator Account has been suspended due to suspected fraud|
+                                                                                |Rejected|KSAOB.Receiver.SuspectedFraud|The Receiver Account has been suspended due to suspected fraud|
+                                                                                |Failed|KSAOB.Originator.SystemUnavailable|This is only for RTP.The payment rails or downstream system is unavailable|
+                                                                                |Cancelled|KSAOB.Receiver.CancellationAccepted|This is only for RTP.The cancellation request has been accepted by the Receiver|
+                                                                                |Expired|KSAOB.Originator.Expired|This is only for RTP.The Originator requested window for an RTP response has expired|
+                                                                                |Failed|KSAOB.Originator.CancelledBeforeSubmission|This is only for RTP.The Originator PASP has not submitted the RTP request to the Receiver PASP due to invalid information|
+                                                                            enum:
+                                                                                - "KSAOB.Originator.InsufficientFunds"
+                                                                                - "KSAOB.Originator.AccountIssue"
+                                                                                - "KSAOB.Receiver.AccountIssue"
+                                                                                - "KSAOB.Originator.TransactionNotPermitted"
+                                                                                - "KSAOB.Originator.DuplicateTransaction"
+                                                                                - "KSAOB.Receiver.DuplicateTransaction"
+                                                                                - "KSAOB.Receiver.Timeout"
+                                                                                - "KSAOB.Receiver.SystemUnavailable"
+                                                                                - "KSAOB.Originator.Other"
+                                                                                - "KSAOB.Receiver.Other"
+                                                                                - "KSAOB.Originator.SuspectedFraud"
+                                                                                - "KSAOB.Receiver.SuspectedFraud"
+                                                                                - "KSAOB.Originator.SystemUnavailable"
+                                                                                - "KSAOB.Receiver.CancellationAccepted"
+                                                                                - "KSAOB.Originator.Expired"
+                                                                                - "KSAOB.Originator.CancelledBeforeSubmission"
+                                                                        Detail:
+                                                                            type: "string"
+                                                                            description: "Further details that are specific to the Reason Code"
+                                                                    additionalProperties: false
+                                                                Message:
+                                                                    $ref: "#/components/schemas/OBMessage"
+                                                            additionalProperties: false
+                                                        instruction:
+                                                            type: object
+                                                            description: The current status of the payment. This is mandatory for KSA. The data will be passed without any validation.
+                                                            oneOf:
+                                                                - $ref: "#/components/schemas/KSAOBRefundInitiationInstructionResponse"
+                                                                - $ref: "#/components/schemas/KSAOBRequestToPayInitiationInstructionResponse"
+
+                                                signedResponse:
+                                                    type: string
+
+                                                tpp:
+                                                    $ref: "#/components/schemas/tpp"
+
+                                                accountId:
+                                                    type: integer
+
+                                                psuIdentifiers:
+                                                    $ref: "#/components/schemas/psuIdentifiers"
+
+                                                interactionId:
+                                                    $ref: "#/components/schemas/apiLogInteractionId"
+
+                                                authorizationCode:
+                                                    type: object
+
+                                                    properties:
+                                                        paymentId:
+                                                            type: string
+
+                                                        accessTokenHash:
+                                                            type: string
+
+                                                        currentDateTime:
+                                                            type: string
+                                                            pattern: ($date-time)
+
+                                                requestBody:
+                                                    type: object
+                                                    description: |
+                                                        Describes the fields to be patched and their corresponding values.
+                                                        
+                                                        The fields that are supported differ based on the Api standard that the consent belongs to.
+                                                    properties:
+                                                        data:
+                                                            type: object
+
+                                                            properties:
+                                                                cnpjInitiatori:
+                                                                    type: integer
+
+                                                                localInstrument:
+                                                                    type: string
+
+                                                                payment:
+                                                                    type: object
+
+                                                                    properties:
+                                                                        currency:
+                                                                            type: string
+
+                                                                        amount:
+                                                                            type: number
+
+                                                                creditorAccount:
+                                                                    type: object
+
+                                                                    properties:
+                                                                        ispb:
+                                                                            type: integer
+
+                                                                        issuer:
+                                                                            type: integer
+
+                                                                        number:
+                                                                            type: integer
+
+                                                                        accountType:
+                                                                            type: string
+
+                                                                remittanceInformation:
+                                                                    type: string
+
+                                                                cnpjInitiator:
+                                                                    type: integer
+
+                                                signedRequestBody:
+                                                    type: string
+
+                                                requestHeaders:
+                                                    type: object
+                                                    description: |
+                                                        The entire set of Http request headers that was received by Ozone from the TPP
+                                                    additionalProperties: true
+
+
+
+                                    meta:
+                                        $ref: "#/components/schemas/meta"
+                '400':
+                    description: |
+                        Indicates a failure to retrieve the payments
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+
+    /funds-confirmation-log:
+        get:
+            tags:
+                - funds-confirmations
+            summary: Retrieve a funds confirmation log by its consent id or account id
+            operationId: getFundsConfirmationByConsentIdorAccId
+            description: |
+                Either one of the query parameters can be used, not both.
+            parameters:
+                - name: consentId
+                  in: query
+                  schema:
+                      type: string
+                  required: true
+                  description: |
+                      Identifier for the consent
+                - name: accountId
+                  in: query
+                  schema:
+                      type: string
+                  required: true
+                  description: |
+                      Identifier for the account
+            responses:
+                '200':
+                    description: successful operation
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - data
+                                    - meta
+                                properties:
+                                    data:
+                                        type: array
+                                        items:
+                                            type: object
+                                            required:
+                                                - id
+                                                - consentId
+                                                - accountId
+                                                - fundsConfirmationResponse
+                                                - tpp
+                                                - interactionId
+                                                - requestBody
+                                                - requestHeader
+
+                                            properties:
+                                                id:
+                                                    type: string
+                                                    description: |
+                                                        A unique identifier for the funds confirmation in uuid-v4 format.
+
+                                                consentId:
+                                                    type: string
+                                                    description: |
+                                                        A ConsentId generated by the ASPSP for the consent. This is different from the top-level `id` field which is used by Consent Manager.
+
+                                                accountId:
+                                                    type: string
+                                                    description: |
+                                                        An AccountId for which the funds confirmation log is needed
+
+                                                fundsConfirmationResponse:
+                                                    type: object
+
+                                                    properties:
+                                                        data:
+                                                            type: object
+                                                            properties:
+                                                                FundsConfirmationId:
+                                                                    type: string
+                                                                    description: |
+                                                                        A unique identifier for the consent in uuid-v4 format.
+
+                                                                ConsentId:
+                                                                    type: string
+                                                                    description: |
+                                                                        A ConsentId generated by the ASPSP for the consent. This is different from the top-level `id` field which is used by Consent Manager.
+
+                                                                creationDateTime:
+                                                                    type: string
+                                                                    pattern: ($date-time)
+                                                                    description: |
+                                                                        An ISO date-time representing when the consent was created
+
+                                                                FundsAvailable:
+                                                                    type: boolean
+
+                                                                Reference:
+                                                                    type: string
+
+                                                                payment:
+                                                                    type: object
+
+                                                                    properties:
+                                                                        currency:
+                                                                            type: string
+
+                                                                        amount:
+                                                                            type: number
+
+                                                        meta:
+                                                            $ref: "#/components/schemas/meta"
+
+                                                tpp:
+                                                    $ref: "#/components/schemas/tpp"
+
+                                                psuIdentifiers:
+                                                    $ref: "#/components/schemas/psuIdentifiers"
+
+                                                interactionId:
+                                                    $ref: "#/components/schemas/apiLogInteractionId"
+
+                                                requestBody:
+                                                    type: object
+                                                    description: |
+                                                        Fields in the funds confirmation request
+                                                    properties:
+                                                        data:
+                                                            type: object
+
+                                                            properties:
+                                                                consentId:
+                                                                    type: string
+                                                                    description: |
+                                                                        A ConsentId generated by the ASPSP for the consent. This is different from the top-level `id` field which is used by Consent Manager.
+
+                                                                Reference:
+                                                                    type: string
+
+                                                                InstructedAmount:
+                                                                    type: object
+
+                                                                    properties:
+                                                                        currency:
+                                                                            type: string
+
+                                                                        amount:
+                                                                            type: string
+
+                                                requestHeader:
+                                                    type: object
+                                                    description: |
+                                                        The entire set of Http request headers that was received by Ozone from the TPP
+                                    meta:
+                                        $ref: "#/components/schemas/meta"
+                '400':
+                    description: |
+                        Indicates a failure to create the consent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+    /consents/{consentId}/events:
+        post:
+            tags:
+                - events
+            summary: Creates an event related to the consent
+            description: |
+                This operation allows an ASPSP(account holder) to raise an event related to the consent. The event will be delivered to the TPP that created the consent or payment, if the TPP has registered for events.
+                
+                `Note: this operation is only available for tenants implementing the KSA APIs.`
+            operationId: postEvent
+            parameters:
+                - $ref: "#/components/parameters/consentId"
+
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            description: |
+                                Describes the fields of the event to be emitted.
+                            required:
+                                - Data
+                                - EventMeta
+                            properties:
+                                Data:
+                                    type: object
+                                    description: Event Data. This Data Object will contain the same API resource and schema that needs to be send over the Event. This object should contain the payload that needs to be sent to the TPP
+                                    additionalProperties: true
+                                    example:
+                                        data:
+                                            timestamp: "2021-05-21T08:30:00Z"
+                                EventMeta:
+                                    type: object
+                                    description: Event Metadata
+                                    required:
+                                        - EventResource
+                                        - EventType
+                                        - ConsentId
+                                    properties:
+                                        EventResource:
+                                            type: string
+                                            description: The API resource with which the event is associated. For e.g. /consents/123 or /pix/payments/123
+                                            example: /payments/v2/pix/payments/abcd-1234
+                                        EventType:
+                                            type: string
+                                            example: BRCB.Payment.Updated
+                                            enum:
+                                                - BRCB.Consent.Updated
+                                                - BRCB.Payment.Updated
+                                                - KSAOB.Resource.Created
+                                                - KSAOB.Resource.Updated
+                                                - KSAOB.Resource.Deleted
+                                            description: The type of Event
+                                        ConsentId:
+                                            description: Unique identification as assigned to identify the consents resource.
+                                            example: urn:bancoex:C1DD33123
+                                            type: string
+                                            minLength: 1
+                                            maxLength: 128
+                                        EventDateTime:
+                                            type: string
+                                            format: date-time
+                                    additionalProperties: false
+                            additionalProperties: false
+            responses:
+                '201':
+                    description: Indicates that the event was successfully queued. This does not guarantee that the event was delivered to the TPP
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description: |
+                                    The event to be emitted
+                                required:
+                                    - Data
+                                    - EventMeta
+                                properties:
+                                    Data:
+                                        type: object
+                                        description: Event Data. This Data Object will contain the same API resource and Schema that needs to be send over the Event.
+                                    EventMeta:
+                                        type: object
+                                        description: Event Metadata
+                                        required:
+                                            - EventResource
+                                            - EventType
+                                            - ConsentId
+                                        properties:
+                                            EventResource:
+                                                type: string
+                                                description: The API resource to which the Event itself is associated
+                                                example: /accounts/123
+                                            EventType:
+                                                type: string
+                                                enum:
+                                                    - KSAOB.Resource.Created
+                                                    - KSAOB.Resource.Updated
+                                                    - KSAOB.Resource.Deleted
+                                                description: The Type of Event
+                                            ConsentId:
+                                                description: Unique identification as assigned to identify the consents resource.
+                                                type: string
+                                                minLength: 1
+                                                maxLength: 128
+                                        additionalProperties: true
+                                additionalProperties: false
+                '400':
+                    description: |
+                        Indicates a failure to register the event
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/errorResponse"
+
+components:
+    schemas:
+        errorResponse:
+            type: object
+            properties:
+                errorCode:
+                    type: string
+                    description: Error code identifying the problem occured
+                errorMessage:
+                    type: string
+                    description: Message describing what problem has occured
+
+        meta:
+            type: object
+            additionalProperties: false
+
+        apiLogInteractionId:
+            type: object
+            properties:
+                ozoneInteractionId:
+                    type: string
+
+                clientInteractionId:
+                    type: string
+
+            additionalProperties: false
+            required:
+                - ozoneInteractionId
+
+        tpp:
+            type: object
+            description: |
+                The TPP record as held by Ozone.
+                
+                If Ozone TPP Connect has been integrated into a directory, the `directoryRecord` provides the TPP's directory record as held by Ozone in base 64 encoded format.
+
+            required:
+                - clientId
+                - orgId
+                - softwareStatementId
+                - tppName
+
+            properties:
+                clientId:
+                    type: string
+                    description: The clientId for the TPP as issued by Ozone
+
+                orgId:
+                    type: string
+                    description: The organization id for the TPP
+
+                softwareStatementId:
+                    type: string
+                    description: The organization id for the TPP
+
+                tppName:
+                    type: string
+                    description: The name of the TPP
+
+                directoryRecord:
+                    type: object
+                    description: The latest copy of the TPP directory record if the TPP has registered with a directory
+
+                ssa:
+                    type: string
+                    description: The SSA that the TPP used to manage its registration with Ozone
+
+            additionalProperties: false
+
+        psuIdentifiers:
+            type: object
+            description: |
+                The PSU that is associated with this consent.
+                
+                The `PSUIdentifiers` object may have artitrary custom fields that an ASPSP may use to
+                identify the PSU.
+                
+                However, all `PSUIdentifiers` must have a mandatory `userId` field that provides a unique
+                user id for the PSU.
+                
+                The consent is initially created without a PSU identified.
+                
+                The value must be specified once the consent is authorised.
+            properties:
+                userId:
+                    type: string
+            required:
+                - userId
+            additionalProperties: true
+
+        newConsent:
+            type: object
+            properties:
+                id:
+                    type: string
+                    description: |
+                        A unique identifier for the consent in uuid-v4 format.
+
+                consentGroupId:
+                    type: string
+                    description: |
+                        A unique identifier for the consent group in uuid-v4 format.
+                        The consent group id is used to group together consents that are related to each other.
+                        e.g. For CDR, the consent group id is used to group together consents that are related to the same arrangement and the consent group id is the arrangement_id
+
+                requestUrl:
+                    type: string
+                    format: url
+                    description: |
+                        The request url of Http request that was received by Ozone from the TPP
+
+                consentType:
+                    type: string
+                    description: |
+                        The type of the consent that is being created.
+                        
+                        Each ASPSP's instance may support a different set of consent types
+                        The Consent Manager supports the creation of consents of different consent types
+                        depending on the standards supported.
+                        
+                        For example, for the UK OBIE standards, the following consent types are available:
+                          - account-access-consents
+                          - domestic-payment-consents
+                          - future-dated-payment-consents
+                          - standing-order-consents
+                          - international-payment-consents
+                          - international-future-dated-payment-consents
+                          - international-standing-order-consents
+                        
+                        For example, for the Brazil BRCB standards, the following consent types are available:
+                          - account-access-consents
+                          - brcb-pix-payment-consents
+                          - brcb-scheduled-pix-payment-consents
+                          - brcb-pix-recurring-payment-consents
+
+                status:
+                    type: string
+                    description: |
+                        The current status of the consent
+                        
+                        The Consent Manager ensures that this field is synchronised with the status of the consent body (the disposition of that field depending on the underlying standard)
+
+                request:
+                    type: object
+                    description: |
+                        The entire Http request body that was received by Ozone from the TPP to create the consent.
+                        
+                        The Consent Manager uses the consent type to identify the schema
+                        that should be used to validate the request. (These schemas are defined by the
+                        underlying standard)
+                    additionalProperties: true
+
+                requestHeaders:
+                    type: object
+                    description: |
+                        The entire set of Http request headers that was received by Ozone from the TPP
+                    additionalProperties: true
+
+                consentBody:
+                    type: object
+                    description: |
+                        An object representing the current state of the consent.
+                        This includes the entire request, augmented by additional computed properties
+                        (e.g. ids, charges etc)
+                        
+                        The Ozone Consent Manager caters to consents from various standards. The actual schema
+                        for each consentBody would be determined by the underlying standard.
+
+                interactionId:
+                    type: string
+                    description: |
+                        The heimdall interaction id that this consent is associated with.
+
+                tpp:
+                    $ref: "#/components/schemas/tpp"
+
+                ozoneSupplementaryInformation:
+                    type: object
+                    additionalProperties: true
+                updatedAt:
+                    type: number
+
+            required:
+                - id
+                - consentType
+                - request
+                - requestHeaders
+                - tpp
+            additionalProperties: true
+
+        patchedConsent:
+            type: object
+            properties:
+                psuIdentifiers:
+                    $ref: "#/components/schemas/psuIdentifiers"
+
+                accountIds:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 1
+                    description: |-
+                        An array of account ids associated with the consent. The array must be populated once consent has been authorised.
+                        For payment consents, the array must always have one element - the debtor account from which the payment will be made
+                        For CBPII consents, the array must always have one element - the account for which CoF requests will be answered
+                        For AIS requests, the array may contain multiple values, representing each of the payment accounts for which an AIS service will be provided.
+
+                supplementaryInformation:
+                    description:
+                        Contains additional information at the discretion of the ASPSP.
+
+                    type: object
+                    additionalProperties: true
+
+                interactionId:
+                    type: string
+                    description: The heimdall interaction id that this consent is associated with. This is updated by heimdall and must not be set by ASPSPs.
+
+                memberState:
+                    type: string
+                    minLength: 2
+                    maxLength: 2
+                    description: |
+                        The member state in which this consent is valid. If specified, for every API call made using this consent, Ozone will ensure that the TPP has a relevent permission in the member state. If not specified a member-state check will not be made.
+
+                paymentContext:
+                    type: object
+                    additionalProperties: true
+
+                bankConnectToken:
+                    type: string
+                    description: A bearer token that will be sent as the `Authorization` header for certain calls to bank connect.
+
+
+            additionalProperties: true
+
+        patchBody:
+            type: object
+            description: |
+                Describes the fields to be patched and their corresponding values.
+                
+                The fields that are supported differ based on the Api standard that the consent belongs to.
+
+            oneOf:
+                - $ref: "#/components/schemas/obieAndBobfPatchBody"
+                - $ref: "#/components/schemas/brcbPatchBody"
+                - $ref: "#/components/schemas/samaPatchBody"
+                - $ref: "#/components/schemas/cdrPatchBody"
+
+        patchPaymentRecordBody:
+            type: object
+            description: |
+                Describes the fields to be patched and their corresponding values.
+                
+                The fields that are supported differ based on the Api standard that the paymernt belongs to.
+            # type: object
+            additionalProperties: false
+            required:
+                - paymentResponse.status
+                - paymentResponse.statusUpdateDateTime
+
+            properties:
+
+
+                paymentResponse.status:
+                    type: string
+                    description: |
+                        The current status of the payment
+                    enum:
+                        - Pending
+                        - Rejected
+                        - AcceptedSettlementInProcess
+                        - AcceptedSettlementCompleted
+                        - AcceptedWithoutPosting
+                        - AcceptedCreditSettlementCompleted
+
+                paymentResponse.statusUpdateDateTime:
+                    type: string
+                    format: ($date-time)
+                    description: |
+                        An ISO date-time representing when the payment status was last updated
+                paymentResponse.rejectionDetails:
+                    description: |
+                        This attribute SHOULD only be returned when the resource Status represents a failed state e.g. : Rejected.
+                    type: object
+                    required:
+                        - Reason
+                    properties:
+                        Reason:
+                            type: object
+                            description: |
+                                A Placeholder for any responses that support a Status
+                            required:
+                                - Code
+                            properties:
+                                Code:
+                                    type: string
+                                    description: |
+                                        The reason code that represents the downstream System Error.
+                                        **Payments**
+                                        
+                                        |Status|Reason Code|Description|
+                                        |----------|--|--|
+                                        |Rejected|KSAOB.Originator.InsufficientFunds|The PASP Debtor Account does not have sufficient funds to complete the payment|
+                                        |Rejected|KSAOB.Originator.AccountIssue|The Originator Account has an issue in sending the payment e.g. Account is inactive, locked, dormant|
+                                        |Rejected|KSAOB.Receiver.AccountIssue|The Receiver Account has an issue in receiving the payment e.g. Account is inactive, locked, dormant|
+                                        |Rejected|KSAOB.Originator.TransactionNotPermitted|The Originator Account is not permitted to perform the requested transaction|
+                                        |Rejected|KSAOB.Originator.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                        |Rejected|KSAOB.Receiver.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                        |Rejected|KSAOB.Receiver.Timeout |A timeout has occurred on the payment rails|
+                                        |Rejected|KSAOB.Receiver.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                        |Rejected|KSAOB.Originator.Other|Any other reason not specified and applicable to the Originator; details MUST be provided in the Detail field|
+                                        |Rejected|KSAOB.Receiver.Other|Any other reason not specified and applicable to the Receiver; details MUST be provided in the Detail field|
+                                        |Rejected|KSAOB.Originator.SuspectedFraud|The Originator Account has been suspended due to suspected fraud|
+                                        |Rejected|KSAOB.Receiver.SuspectedFraud|The Receiver Account has been suspended due to suspected fraud|
+                                        |Failed|KSAOB.Originator.SystemUnavailable|This is only for RTP.The payment rails or downstream system is unavailable|
+                                        |Cancelled|KSAOB.Receiver.CancellationAccepted|This is only for RTP.The cancellation request has been accepted by the Receiver|
+                                        |Expired|KSAOB.Originator.Expired|This is only for RTP.The Originator requested window for an RTP response has expired|
+                                        |Failed|KSAOB.Originator.CancelledBeforeSubmission|This is only for RTP.The Originator PASP has not submitted the RTP request to the Receiver PASP due to invalid information|
+                                    enum:
+                                        - "KSAOB.Originator.InsufficientFunds"
+                                        - "KSAOB.Originator.AccountIssue"
+                                        - "KSAOB.Receiver.AccountIssue"
+                                        - "KSAOB.Originator.TransactionNotPermitted"
+                                        - "KSAOB.Originator.DuplicateTransaction"
+                                        - "KSAOB.Receiver.DuplicateTransaction"
+                                        - "KSAOB.Receiver.Timeout"
+                                        - "KSAOB.Receiver.SystemUnavailable"
+                                        - "KSAOB.Originator.Other"
+                                        - "KSAOB.Receiver.Other"
+                                        - "KSAOB.Originator.SuspectedFraud"
+                                        - "KSAOB.Receiver.SuspectedFraud"
+                                        - "KSAOB.Originator.SystemUnavailable"
+                                        - "KSAOB.Receiver.CancellationAccepted"
+                                        - "KSAOB.Originator.Expired"
+                                        - "KSAOB.Originator.CancelledBeforeSubmission"
+                                Detail:
+                                    type: "string"
+                                    description: "Further details that are specific to the Reason Code"
+                            additionalProperties: false
+                        Message:
+                            $ref: "#/components/schemas/OBMessage"
+                    additionalProperties: false
+                paymentResponse.instruction:
+                    type: object
+                    description: The current status of the payment. This is mandatory for KSA. The instruction object will be replaced with existing instruction object without any validation. In every patch call, bank needs to send complete instruction object instead of only updated fields.
+                    oneOf:
+                        - $ref: "#/components/schemas/KSAOBRefundInitiationInstructionResponse"
+                        - $ref: "#/components/schemas/KSAOBRequestToPayInitiationInstructionResponse"
+
+        obieAndBobfPatchBody:
+            type: object
+            additionalProperties: false
+            properties:
+                psuIdentifiers:
+                    $ref: "#/components/schemas/psuIdentifiers"
+
+                accountIds:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 1
+                    description: |-
+                        An array of account ids associated with the consent. The array must be populated once consent has been authorised.
+                        For payment consents, the array must always have one element - the debtor account from which the payment will be made
+                        For CBPII consents, the array must always have one element - the account for which CoF requests will be answered
+                        For AIS requests, the array may contain multiple values, representing each of the payment accounts for which an AIS service will be provided.
+
+                supplementaryInformation:
+                    description:
+                        Contains additional information at the discretion of the ASPSP.
+
+                    type: object
+                    additionalProperties: true
+
+                interactionId:
+                    type: string
+                    description: The heimdall interaction id that this consent is associated with. This is updated by heimdall and must not be set by ASPSPs.
+
+                consentBody.Data.Status:
+                    type: string
+                    enum:
+                        - AwaitingAuthorisation
+                        - Authorised
+                        - Consumed
+                        - Rejected
+                        - Revoked
+
+                    description: |
+                        The current status of the consent for the consent.
+
+                memberState:
+                    type: string
+                    minLength: 2
+                    maxLength: 2
+                    description: |
+                        The member state in which this consent is valid. If specified, for every API call made using this consent, Ozone will ensure that the TPP has a relevent permission in the member state. If not specified a member-state check will not be made.
+
+                paymentContext:
+                    type: object
+                    additionalProperties: true
+
+                bankConnectToken:
+                    type: string
+                    description: A bearer token that will be sent as the `Authorization` header for certain calls to bank connect.
+
+        brcbPatchBody:
+            type: object
+            additionalProperties: false
+            properties:
+                psuIdentifiers:
+                    $ref: "#/components/schemas/psuIdentifiers"
+
+                accountIds:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 1
+                    description: |-
+                        An array of account ids associated with the consent. The array must be populated once consent has been authorised.
+                        For payment consents, the array must always have one element - the debtor account from which the payment will be made
+                        For CBPII consents, the array must always have one element - the account for which CoF requests will be answered
+                        For AIS requests, the array may contain multiple values, representing each of the payment accounts for which an AIS service will be provided.
+
+                supplementaryInformation:
+                    description:
+                        Contains additional information at the discretion of the ASPSP.
+
+                    type: object
+                    additionalProperties: true
+
+                interactionId:
+                    type: string
+                    description: The heimdall interaction id that this consent is associated with. This is updated by heimdall and must not be set by ASPSPs.
+
+                consentBody.data.status:
+                    type: string
+                    enum:
+                        - AWAITING_AUTHORISATION
+                        - AUTHORISED
+                        - CONSUMED
+                        - REJECTED
+                        - REVOKED
+                        - PARTIALLY_ACCEPTED
+
+                    description: |
+                        The current status of the consent for the BRCB consents
+
+                consentBody.data.rejection:
+                    type: object
+                    description: |
+                        This field is applicable for tenants implementing the BRCB APIs. Object to be returned if consent is rejected.
+
+                    required:
+                        - rejectedBy
+                        - reason
+                    properties:
+                        rejectedBy:
+                            $ref: "#/components/schemas/EnumRejectedBy"
+                        reason:
+                            $ref: "#/components/schemas/RejectedReason"
+                        rejectedAt:
+                            type: string
+                            format: date-time
+                        rejectedFrom:
+                            type: string
+                            enum:
+                                - INICIADORA
+                                - DETENTORA
+                            example: DETENTORA
+
+                consentBody.data.statusUpdateDateTime:
+                    type: string
+                    format: date-time
+                    example: "2021-05-21T08:30:00Z"
+                    pattern: '^(\d{4})-(1[0-2]|0?[1-9])-(3[01]|[12][0-9]|0?[1-9])T(?:[01]\d|2[0123]):(?:[012345]\d):(?:[012345]\d)Z$'
+                    maxLength: 20
+                    description: |
+                        This field is applicable for tenants implementing the BRCB APIs. Date and time the represneting when the consent gets updated. A string with date and time according to the RFC-3339 specification, always using the UTC timezone (UTC time format).
+
+                consentBody.data.expirationDateTime:
+                    type: string
+                    format: date-time
+                    example: "2021-05-21T08:30:00Z"
+                    pattern: '^(\d{4})-(1[0-2]|0?[1-9])-(3[01]|[12][0-9]|0?[1-9])T(?:[01]\d|2[0123]):(?:[012345]\d):(?:[012345]\d)Z$'
+                    maxLength: 20
+                    description: |
+                        This field is applicable for tenants implementing the BRCB APIs. It reflects the expiration date of the consent. A string with date and time according to the RFC-3339 specification, always using the UTC timezone (UTC time format).
+
+                memberState:
+                    type: string
+                    minLength: 2
+                    maxLength: 2
+                    description: |
+                        The member state in which this consent is valid. If specified, for every API call made using this consent, Ozone will ensure that the TPP has a relevent permission in the member state. If not specified a member-state check will not be made.
+
+                consentBody.data.revocation:
+                    type: object
+                    description: Objeto contendo as informações de revogação dos consentimentos de longa duração.
+                    required:
+                        - revokedBy
+                        - revokedFrom
+                        - reason
+                    properties:
+                        revokedBy:
+                            type: string
+                            enum:
+                                - INICIADORA
+                                - USUARIO
+                                - DETENTORA
+                            example: INICIADORA
+                            description: |
+                                Quem iniciou a solicitação de revogação
+                                - INICIADORA
+                                - USUARIO
+                                - DETENTORA
+                        revokedFrom:
+                            type: string
+                            enum:
+                                - INICIADORA
+                                - DETENTORA
+                            example: DETENTORA
+                            description: |
+                                Canal onde iniciou-se o processo de revogação
+                                - INICIADORA
+                                - DETENTORA
+                        revokedAt:
+                            type: string
+                            format: date-time
+                        reason:
+                            type: object
+                            required:
+                                - code
+                                - detail
+                            properties:
+                                code:
+                                    type: string
+                                    enum:
+                                        - REVOGADO_RECEBEDOR
+                                        - REVOGADO_USUARIO
+                                        - NAO_INFORMADO
+                                detail:
+                                    type: string
+                                    pattern: '[\w\W\s]*'
+                                    maxLength: 2048
+                                    description: |
+                                        - NAO_INFORMADO: Não informada pela detentora de conta;
+                                        - REVOGADO_USUARIO: O usuário pagador revogou a recorrência do consentimento;
+                                        - REVOGADO_RECEBEDOR: O usuário recebedor revogou a recorrência do consentimento.
+
+                consentBody.data.riskSignals:
+                    $ref: '#/components/schemas/RiskSignalsConsents'
+
+                consentBody.data.creditors:
+                    type: array
+                    minItems: 1
+                    items:
+                        type: object
+                        description: Objeto contendo os dados do recebedor (creditor).
+                        properties:
+                            name:
+                                type: string
+                                pattern: ^([A-Za-zÀ-ÖØ-öø-ÿ,.@:&*+_<>()!?/\\$%\d' -]+)$
+                                maxLength: 120
+                                example: Marco Antonio de Brito
+                                description: |
+                                    Em caso de pessoa natural deve ser informado o nome completo do titular da conta do recebedor.
+                                    Em caso de pessoa jurídica deve ser informada a razão social ou o nome fantasia da conta do recebedor.
+
+                consentBody.data.startDateTime:
+                    type: string
+                    format: date-time
+                    example: '2021-05-21T08:30:00Z'
+
+                consentBody.data.automatic:
+                    type: object
+                    description: Definição da configuração de recorrência para pagamentos automáticos
+                    properties:
+                        transactionLimit:
+                            type: string
+                            pattern: '^((\d{1,16}\.\d{2}))$'
+                            minLength: 4
+                            maxLength: 19
+                            example: '1000000.12'
+                            description: Valor da transação com 2 casas decimais.
+                        dayOfMonth:
+                            type: integer
+#                            format: int32
+                            minimum: 1
+                            maximum: 31
+                            example: 10
+
+                consentBody.data.debtorAccount:
+                    type: object
+                    required:
+                        - ispb
+                        - number
+                        - accountType
+                    properties:
+                        ispb:
+                            type: string
+                            minLength: 8
+                            maxLength: 8
+                            pattern: '^[0-9]{8}$'
+                            example: '12345678'
+                        issuer:
+                            type: string
+                            minLength: 1
+                            maxLength: 4
+                            pattern: '^[0-9]{1,4}$'
+                            example: '1774'
+                        number:
+                            type: string
+                            minLength: 1
+                            maxLength: 20
+                            pattern: '^[0-9]{1,20}$'
+                            example: '1234567890'
+                        accountType:
+                            type: string
+                            enum:
+                                - CACC
+                                - SVGS
+                                - TRAN
+                        ibgeTownCode:
+                            type: string
+                            minLength: 7
+                            maxLength: 7
+                            pattern: '^\d{7}$'
+                            example: '5300108'
+
+                paymentContext:
+                    type: object
+                    additionalProperties: true
+
+                bankConnectToken:
+                    type: string
+                    description: A bearer token that will be sent as the `Authorization` header for certain calls to bank connect.
+
+                consentBody.data.rejectionReason:
+                    type: object
+                    description: |
+                        This field is applicable for tenants implementing the BRCB APIs. Object to be returned if consent is rejected.
+
+                    required:
+                        - code
+                        - detail
+                    properties:
+                        code:
+                            $ref: "#/components/schemas/EnumRejectReasonCode"
+                        detail:
+                            type: string
+
+        RiskSignalsConsents:
+            type: object
+            required:
+                - deviceId
+                - isRootedDevice
+                - screenBrightness
+                - elapsedTimeSinceBoot
+                - osVersion
+                - userTimeZoneOffset
+                - language
+                - screenDimensions
+                - accountTenure
+            description: |
+                Sinais de risco para iniciação de pagamentos automáticos
+                
+                [Restrição] Deve ser enviado quando o consentimento for para o produto Sweeping Accounts (O objeto "/data/recurringConfiguration/sweeping" usado no oneOf)
+            properties:
+                deviceId:
+                    type: string
+                    description: ID único do dispositivo gerado pela plataforma.
+                    example: 00000000-54b3-e7c7-0000-000046bffd97
+                isRootedDevice:
+                    type: boolean
+                    description: Indica se o dispositivo atualmente está com permissão de “root”.
+                    example: false
+                screenBrightness:
+                    type: number
+                    format: double
+                    description: |
+                        Indica o nível de brilho da tela do dispositivo.
+                        Em dispositivos Android o valor é um inteiro, entre 0 e 255, inclusive;
+                        Em dispositivos iOS o valor é um ponto flutuante entre 0.0 e 1.0.
+                elapsedTimeSinceBoot:
+                    type: integer
+                    format: int64
+                    description: Indica por quanto tempo (em milissegundos) o dispositivo está ligado.
+                osVersion:
+                    type: string
+                    description: Versão do sistema operacional.
+                userTimeZoneOffset:
+                    type: string
+                    description: |
+                        Indica a configuração de fuso horário do dispositivo do usuário, com o formato UTC offset: ±hh[:mm]
+                language:
+                    type: string
+                    description: Indica o idioma do dispositivo no formato ISO 639-1.
+                screenDimensions:
+                    type: object
+                    description: Dimensões da tela do dispositivo
+                    required:
+                        - height
+                        - width
+                    properties:
+                        height:
+                            type: integer
+                            format: int64
+                            description: Altura da tela, em pixels.
+                        width:
+                            type: integer
+                            format: int64
+                            description: Largura da tela, em pixels.
+                accountTenure:
+                    type: string
+                    format: date
+                    pattern: '^(\d{4})-(1[0-2]|0?[1-9])-(3[01]|[12][0-9]|0?[1-9])$'
+                    description: Data de cadastro do cliente na iniciadora.
+                geolocation:
+                    type: object
+                    description: Dados de geolocalização do cliente enquanto logado na iniciadora
+                    properties:
+                        latitude:
+                            type: number
+                            format: double
+                            description: Coordenada latitudial do cliente enquanto logado na iniciadora
+                        longitude:
+                            type: number
+                            format: double
+                            description: Coordenada longitudinal do cliente enquanto logado na iniciadora
+                        type:
+                            type: string
+                            description: |
+                                Tipo de mecanismo utilizado na geração da geolocalização
+                            enum:
+                                - COARSE
+                                - FINE
+                                - INFERRED
+                isCallInProgress:
+                    type: boolean
+                    description: |
+                        Indica chamada ativa no momento do vínculo.
+                        
+                        [Restrição] Caso o sinal de risco esteja disponível (cliente permitiu que fosse coletado), o mesmo deverá ser enviado
+                isDevModeEnabled:
+                    type: boolean
+                    description: Indica se o dispositivo está em modo de desenvolvedor.
+                isMockGPS:
+                    type: boolean
+                    description: Indica se o dispositivo está usando um GPS falso.
+                isEmulated:
+                    type: boolean
+                    description: Indica se o dispositivo é emulado ou real.
+                isMonkeyRunner:
+                    type: boolean
+                    description: Indica o uso do MonkeyRunner.
+                isCharging:
+                    type: boolean
+                    description: Indica se a bateria do dispositivo está sendo carregada.
+                antennaInformation:
+                    type: string
+                    description: Indica em qual antena o dispositivo está conectado.
+                isUsbConnected:
+                    type: boolean
+                    description: Indica se o dispositivo está conectado a outro dispositivo via USB.
+                integrity:
+                    type: object
+                    description: |
+                        Informa a integridade do dispositivo e app.
+                        No Android, conforme documentação Play API Integrity - [Android](https://developer.android.com/google/play/integrity/overview?hl=pt-br).
+                        No iOS, conforme documentação App Attest [iOS](https://developer.apple.com/documentation/devicecheck/establishing_your_app_s_integrity)
+                    properties:
+                        appRecognitionVerdict:
+                            type: string
+                            description: Informa a integridade do app
+                        deviceRecognitionVerdict:
+                            type: string
+                            description: Informa a integridade do dispositivo
+
+
+        cdrPatchBody:
+            type: object
+            additionalProperties: false
+            properties:
+                psuIdentifiers:
+                    $ref: "#/components/schemas/psuIdentifiers"
+
+                accountIds:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 1
+                    description: |-
+                        An array of account ids associated with the consent. The array must be populated once consent has been authorised.
+                        For payment consents, the array must always have one element - the debtor account from which the payment will be made
+                        For CBPII consents, the array must always have one element - the account for which CoF requests will be answered
+                        For AIS requests, the array may contain multiple values, representing each of the payment accounts for which an AIS service will be provided.
+
+                supplementaryInformation:
+                    description:
+                        Contains additional information at the discretion of the ASPSP.
+
+                    type: object
+                    additionalProperties: true
+
+                interactionId:
+                    type: string
+                    description: The heimdall interaction id that this consent is associated with. This is updated by heimdall and must not be set by ASPSPs.
+
+                consentBody.data.status:
+                    type: string
+                    enum:
+                        - AwaitingAuthorization
+                        - Authorized
+                        - Rejected
+                        - Revoked
+                        - AdrBlocked
+                    description: |
+                        The current status of the consent
+                consentBody.data.revokedBy:
+                    type: string
+                    enum:
+                        - ADR
+                        - CONSUMER
+                        - COLLEAGUE
+                        - REGISTER
+                        - EXPIRATION
+                        - AMENDMENT
+
+                    description: Specifies the identifier of the revocation.
+                        <br>ADR - The Arrangement (and consent) was withdrawn by the customer via the ADR
+                        
+                        <br>CONSUMER - The Arrangement (and consent) was withdrawn by the customer via the Tenant’s Consumer Dashboard
+                        
+                        <br>COLLEAGUE - The Arrangement (and consent) was withdrawn by the customer by contacting the Tenant directly with a Tenant back-office colleague revoking the Arrangement on the customer’s behalf
+                        
+                        <br>REGISTER - The Arrangement (and consent) was revoked following an ADR status change on the CDR Register.
+                        
+                        <br>EXPIRATION - The Arrangement (and consent) has naturally expired
+                        
+                        <br>AMENDMENT - The consent has been amended and replaced by a new consent.  The Arrangement remains active.
+                consentBody.data.revokedAt:
+                    type: string
+                    pattern: ($date-time)
+                    description: |
+                        An ISO date-time representing  timestamp for revocation
+                consentBody.data.maximumSharingDuration:
+                    type: number
+                    description: |
+                        <datetime>
+                consentBody.data.revokedByPsu:
+                    type: string
+                    description: |
+                        the PSU that revoked the consent|
+                        This will have the same structure as psuIdentifier
+
+                memberState:
+                    type: string
+                    minLength: 2
+                    maxLength: 2
+                    description: |
+                        The member state in which this consent is valid. If specified, for every API call made using this consent, Ozone will ensure that the TPP has a relevent permission in the member state. If not specified a member-state check will not be made.
+
+                paymentContext:
+                    type: object
+                    additionalProperties: true
+
+                bankConnectToken:
+                    type: string
+                    description: A bearer token that will be sent as the `Authorization` header for certain calls to bank connect.
+
+        samaPatchBody:
+            type: object
+            additionalProperties: false
+            properties:
+                psuIdentifiers:
+                    $ref: "#/components/schemas/psuIdentifiers"
+
+                accountIds:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 1
+                    description: |-
+                        An array of account ids associated with the consent. The array must be populated once consent has been authorised.
+                        For payment consents, the array must always have one element - the debtor account from which the payment will be made
+                        For CBPII consents, the array must always have one element - the account for which CoF requests will be answered
+                        For AIS requests, the array may contain multiple values, representing each of the payment accounts for which an AIS service will be provided.
+
+                supplementaryInformation:
+                    description:
+                        Contains additional information at the discretion of the ASPSP.
+
+                    type: object
+                    additionalProperties: true
+
+                interactionId:
+                    type: string
+                    description: The heimdall interaction id that this consent is associated with. This is updated by heimdall and must not be set by ASPSPs.
+
+                consentBody.Data.ConsentStatus:
+                    type: string
+                    enum:
+                        - AwaitingAuthorisation
+                        - Consumed
+                        - Rejected
+                        - Revoked
+                        - Authorized
+                    description: |
+                        The current status of the consent
+
+                consentBody.Data.RevokedBy:
+                    type: string
+                    enum:
+                        - KSAOB.PASP
+                        - KSAOB.TPP
+                    description: Specifies the identifier of the revocation.
+                        Only used for KSA SAMA standard
+
+                consentBody.Data.ConsentStatusUpdateDateTime:
+                    type: string
+                    format: date-time
+                    description: |
+                        An ISO date-time representing when the consent gets updated. Tenants implementing the SAMA API must include this field with the current time for AIS consents
+                        `Note: Only used with SAMA standards`
+
+                consentBody.Data.ConsentFlags:
+                    description: |
+                        Flags that are associated with a Consent Status.
+                        
+                        A Consent Status:
+                        * May not have any associated flags.
+                        * May have one or more associated flags.
+                        
+                        A Flag cannot be changed once it is created. Its state is Immutable.
+                        Each Flag value that is set must have a date time stamp associated with it.
+                        
+                        |Flag| Consent Status| Flag Description|
+                        |----|---------------|-----------------|
+                        | PartlyAuthorized | AwaitingAuthorization | The initiator has authorized the consent and is awaiting further authorizations.|
+                        | Activated |Authorized | The authorized long-lived consent is being utilized.|
+                        | Revoked | Finished | An authorized consent has been revoked |
+                        | Expired | Finished | The consent has expired |
+                        | Consumed | Finished| The consented action has been completed successfully.|
+                        | Closed | Finished | The consent has finished with no further inquiries permitted.|
+                        | Amended | Finished | The consent (parameters) has been amended / renewed.|
+                        | |Rejected| The unauthorized consent has been canceled at the TPP or rejected at the PASP.
+                    type: "object"
+                    properties:
+                        PartlyAuthorized:
+                            type: string
+                            format: date-time
+                        Activated:
+                            type: string
+                            format: date-time
+                        Revoked:
+                            type: string
+                            format: date-time
+                        Expired:
+                            type: string
+                            format: date-time
+                        Consumed:
+                            type: string
+                            format: date-time
+                        Closed:
+                            type: string
+                            format: date-time
+                        Amended:
+                            type: string
+                            format: date-time
+                    additionalProperties: false
+
+                memberState:
+                    type: string
+                    minLength: 2
+                    maxLength: 2
+                    description: |
+                        The member state in which this consent is valid. If specified, for every API call made using this consent, Ozone will ensure that the TPP has a relevent permission in the member state. If not specified a member-state check will not be made.
+
+                paymentContext:
+                    type: object
+                    additionalProperties: true
+
+                bankConnectToken:
+                    type: string
+                    description: A bearer token that will be sent as the `Authorization` header for certain calls to bank connect.
+
+                consentBody.Meta:
+                    $ref: "#/components/schemas/OBMetaMultiAuthorization"
+
+        samaPaymentPatchBody:
+            type: object
+            additionalProperties: false
+            required:
+                - paymentResponse.status
+                - paymentResponse.statusUpdateDateTime
+
+            properties:
+
+
+                paymentResponse.status:
+                    type: string
+                    description: |
+                        The current status of the payment
+                    enum:
+                        - Pending
+                        - Rejected
+                        - AcceptedSettlementInProcess
+                        - AcceptedSettlementCompleted
+                        - AcceptedWithoutPosting
+                        - AcceptedCreditSettlementCompleted
+
+                paymentResponse.statusUpdateDateTime:
+                    type: string
+                    format: ($date-time)
+                    description: |
+                        An ISO date-time representing when the payment status was last updated
+                paymentResponse.status.RejectionDetails:
+                    description: |
+                        This attribute SHOULD only be returned when the resource Status represents a failed state e.g. : Rejected.
+                    type: object
+                    required:
+                        - "Reason"
+                    properties:
+                        Reason:
+                            type: object
+                            description: |
+                                A Placeholder for any responses that support a Status
+                            required:
+                                - Code
+                            properties:
+                                Code:
+                                    type: string
+                                    description: |
+                                        The reason code that represents the downstream System Error.
+                                        **Payments**
+                                        
+                                        |Status|Reason Code|Description|
+                                        |----------|--|--|
+                                        |Rejected|KSAOB.Originator.InsufficientFunds|The PASP Debtor Account does not have sufficient funds to complete the payment|
+                                        |Rejected|KSAOB.Originator.AccountIssue|The Originator Account has an issue in sending the payment e.g. Account is inactive, locked, dormant|
+                                        |Rejected|KSAOB.Receiver.AccountIssue|The Receiver Account has an issue in receiving the payment e.g. Account is inactive, locked, dormant|
+                                        |Rejected|KSAOB.Originator.TransactionNotPermitted|The Originator Account is not permitted to perform the requested transaction|
+                                        |Rejected|KSAOB.Originator.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                        |Rejected|KSAOB.Receiver.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                        |Rejected|KSAOB.Receiver.Timeout |A timeout has occurred on the payment rails|
+                                        |Rejected|KSAOB.Receiver.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                        |Rejected|KSAOB.Originator.Other|Any other reason not specified and applicable to the Originator; details MUST be provided in the Detail field|
+                                        |Rejected|KSAOB.Receiver.Other|Any other reason not specified and applicable to the Receiver; details MUST be provided in the Detail field|
+                                        |Rejected|KSAOB.Originator.SuspectedFraud|The Originator Account has been suspended due to suspected fraud|
+                                        |Rejected|KSAOB.Receiver.SuspectedFraud|The Receiver Account has been suspended due to suspected fraud|
+                                    enum:
+                                        - "KSAOB.Originator.InsufficientFunds"
+                                        - "KSAOB.Originator.AccountIssue"
+                                        - "KSAOB.Receiver.AccountIssue"
+                                        - "KSAOB.Originator.TransactionNotPermitted"
+                                        - "KSAOB.Originator.DuplicateTransaction"
+                                        - "KSAOB.Receiver.DuplicateTransaction"
+                                        - "KSAOB.Receiver.Timeout"
+                                        - "KSAOB.Receiver.SystemUnavailable"
+                                        - "KSAOB.Originator.Other"
+                                        - "KSAOB.Receiver.Other"
+                                        - "KSAOB.Originator.SuspectedFraud"
+                                        - "KSAOB.Receiver.SuspectedFraud"
+                                Detail:
+                                    type: "string"
+                                    description: "Further details that are specific to the Reason Code"
+                            additionalProperties: false
+                        Message:
+                            $ref: "#/components/schemas/OBMessage"
+                    additionalProperties: false
+
+        KSAOBRefundInitiationInstructionResponse:
+            title: "OBRefundInitiationInstruction"
+            description: |
+                (Array) of Refund Instructions
+                
+                * Please refer to the Business Rules, PIS Limits and Constants, Maximum Refunds per Message for the limit.
+            type: "array"
+            minItems: 1
+            maxItems: 500
+            items:
+                required:
+                    - "RefundStatus"
+                    - "RefundStatusUpdateDateTime"
+                    - "CreationDateTime"
+                    - "OriginalPayment"
+                    - "Type"
+                    - "Amount"
+                properties:
+                    Amount:
+                        $ref: "#/components/schemas/ActiveCurrencyAmount"
+                    OriginalPayment:
+                        $ref: "#/components/schemas/OBSingleRefundPayment"
+                    RefundPurposeCode:
+                        $ref: "#/components/schemas/OBPaymentPurposeCode"
+                    RefundStatus:
+                        $ref: "#/components/schemas/OBRefundStatus"
+                    RefundStatusUpdateDateTime:
+                        $ref: "#/components/schemas/OBStatusUpdateDateTime"
+                    RefundStatusDetail:
+                        $ref: "#/components/schemas/OBRefundStatusDetail"
+                    CreationDateTime:
+                        $ref: "#/components/schemas/OBCreationDateTime"
+                    Charges:
+                        $ref: "#/components/schemas/Charges"
+                additionalProperties: false
+
+        OBRefundStatus:
+            title: "OBRefundStatus"
+            description: |
+                Specifies the status of the Refund information group
+                * Pending: Refund initiation or individual transaction included in the Refund initiation is pending. Further checks and status update will be performed.
+                * Rejected: The Refund initiation has been rejected
+                * AcceptedSettlementCompleted: Settlement of the Debtors account has been completed
+                * AcceptedCreditSettlementCompleted: When the Payee account has been credited with the funds of the Refund initiated via the PISP
+                * AcceptedWithoutPosting:  When the Recipient Bank has accepted the Refund but has not applied the credit to the Payee account yet.
+            type: "string"
+            enum:
+                - "Pending"
+                - "AcceptedSettlementCompleted"
+                - "AcceptedCreditSettlementCompleted"
+                - "AcceptedWithoutPosting"
+                - "Rejected"
+            example: Pending
+
+        OBPaymentPurposeCode:
+            title: "OBPaymentPurposeCode:"
+            description: |
+                A Category code, related to the type of services or goods that corresponds to the underlying purpose of the Payment, Refund, RTP.
+                The Purpose Codes can be based on either:
+                * The SARIE IPS Message Implementation Guide - Section 21.4 - Category Purpose Codes
+                * The ISO20022 External code sets
+            type: "string"
+            minLength: 1
+            maxLength: 4
+            pattern: "^[A-Z]{3,4}$"
+
+        OBSingleRefundPayment:
+            title: "OBSingleRefundPayment"
+            type: "object"
+            description: |
+                Placeholder for single payment Refund Data.
+            required:
+                - "Amount"
+                - "Date"
+                - "PaymentTransactionId"
+            properties:
+                Amount:
+                    $ref: "#/components/schemas/ActiveCurrencyAmount"
+                Date:
+                    description: |
+                        Date of the Original Payment
+                    type: "string"
+                    format: "date"
+                PaymentTransactionId:
+                    $ref: "#/components/schemas/OBPaymentTransactionId"
+            additionalProperties: false
+
+        ActiveCurrencyAmount:
+            title: "ActiveCurrencyAmount"
+            description: |
+                The Currency and Amount relating to the Payment, Refund or Request to Pay
+            type: "object"
+            required:
+                - "Amount"
+                - "Currency"
+            properties:
+                Amount:
+                    description: "A number of monetary units specified in an active currency where the unit of currency is explicit and compliant with ISO 4217."
+                    type: "string"
+                Currency:
+                    description: "A 3 character alphabetic code allocated to a currency under an international currency identification scheme, as described in the latest edition of the international standard ISO 4217 'Codes for the representation of currencies and funds'."
+                    type: "string"
+
+        OBPaymentTransactionId:
+            title: "OBPaymentTransactionId"
+            type: "string"
+            description: |
+                This is an end to end TransactionId that is associated with a payment when it is sent from an Originating PASP to a Receiving PASP.
+                This identifier is also used for Refunds.
+                
+                This applies to:
+                * Same Bank Transfer (Within the same bank)
+                * Local Bank Transfer (Between 2 banks)
+                
+                **IPS**
+                Transaction Identification field (2.4) as defined in the Payment Identification block (2.1) of the Credit Transfer pacs.008 message
+                (e.g) 20201122SAABCD00002BXXX20730997766
+                
+                **ON-US**
+                MUST prefix with a 6 digit bank codes (as per the OBCreditorAgent schema):
+                SA + 4 char code. (e.g. SASAMA)
+            minimum: 1
+            maximum: 35
+
+        OBCreationDateTime:
+            title: "OBCreationDateTime"
+            description: "Date and time at which the message was created. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2023-04-05T10:43:07+00:00"
+            type: "string"
+            format: "date-time"
+
+        OBStatusUpdateDateTime:
+            title: "OBStatusUpdateDateTime"
+            description: "Date and time at which the resource status was updated.All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2023-04-05T10:43:07+00:00"
+            type: "string"
+            format: "date-time"
+
+        OBRefundStatusDetail:
+            title: "OBRefundStatusDetail"
+            description: |
+                This attribute SHOULD only be returned when the resource Status represents a failed state e.g. : Rejected.
+            type: "object"
+            required:
+                - "Reason"
+            properties:
+                Reason:
+                    type: "object"
+                    description: |
+                        A Placeholder for any responses that support a Status
+                    required:
+                        - "Code"
+                    properties:
+                        Code:
+                            type: string
+                            description: |
+                                The reason code that represents the downstream System Error.
+                                
+                                **Refunds**
+                                
+                                |Status|Reason Code|Description|
+                                |----------|--|--|
+                                |Rejected|KSAOB.Originator.InsufficientFunds|The PASP Debtor Account does not have sufficient funds to complete the refund|
+                                |Rejected|KSAOB.Originator.AccountIssue|The Originator Account has an issue in sending the refund e.g. Account is inactive, locked, dormant|
+                                |Rejected|KSAOB.Receiver.AccountIssue|The Receiver Account has an issue in receiving the refund e.g. Account is inactive, locked, dormant|
+                                |Rejected|KSAOB.Originator.TransactionNotPermitted|The Originator Account is not permitted to perform the requested transaction|
+                                |Rejected|KSAOB.Originator.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                |Rejected|KSAOB.Receiver.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                |Rejected|KSAOB.Receiver.Timeout |A timeout has occurred on the payment rails|
+                                |Rejected|KSAOB.Receiver.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                |Rejected|KSAOB.Originator.Other|Any other reason not specified and applicable to the Originator; details MUST be provided in the Detail field|
+                                |Rejected|KSAOB.Receiver.Other|Any other reason not specified and applicable to the Receiver; details MUST be provided in the Detail field|
+                            enum:
+                                - "KSAOB.Originator.InsufficientFunds"
+                                - "KSAOB.Originator.AccountIssue"
+                                - "KSAOB.Receiver.AccountIssue"
+                                - "KSAOB.Originator.TransactionNotPermitted"
+                                - "KSAOB.Originator.DuplicateTransaction"
+                                - "KSAOB.Receiver.DuplicateTransaction"
+                                - "KSAOB.Receiver.Timeout"
+                                - "KSAOB.Receiver.SystemUnavailable"
+                                - "KSAOB.Originator.Other"
+                                - "KSAOB.Receiver.Other"
+                        Detail:
+                            type: "string"
+                            description: "Further details that are specific to the Reason Code"
+                    additionalProperties: false
+                Message:
+                    $ref: "#/components/schemas/OBMessage"
+            additionalProperties: false
+
+        Charges:
+            title: "Charges"
+            type: "array"
+            description: |
+                Applicable only for KSA
+            items:
+                type: "object"
+                additionalProperties: false
+                description: |
+                    Set of elements used to provide details of a charge for the payment initiation.
+                    * For Payments, these Charges are on the Payer.
+                required:
+                    - "Type"
+                    - "Amount"
+                properties:
+                    Type:
+                        $ref: "#/components/schemas/ExternalPaymentChargeTypeCode"
+                    Amount:
+                        $ref: "#/components/schemas/ActiveCurrencyAmount"
+
+        ExternalPaymentChargeTypeCode:
+            title: "OBExternalPaymentChargeTypeCode"
+            description: "Charge type, in a coded form."
+            type: "string"
+            enum:
+                - "VAT"
+                - "Fees"
+
+        KSAOBRequestToPayInitiationInstructionResponse:
+            title: "OBRequestToPayInitiationInstructionResponse"
+            description: |
+                (Array) of Single or Multiple Request To Pay Instructions
+                
+                * Please refer to the Business Rules, PIS Limits and Constants, Maximum RTPs per Message for the limit.
+            type: "array"
+            minItems: 1
+            maxItems: 10
+            items:
+                allOf:
+                    - type: "object"
+                      required:
+                          - "RequestToPayStatus"
+                          - "RequestToPayStatusUpdateDateTime"
+                          - "CreationDateTime"
+                          - "Amount"
+                          - "RequestToPayPurposeCode"
+                          - "RequestToPayTransactionId"
+                          - "DebtorAccount"
+                      properties:
+                          RequestToPayTransactionId:
+                              $ref: "#/components/schemas/OBRequestToPayTransactionId"
+                          Amount:
+                              $ref: "#/components/schemas/ActiveCurrencyAmount"
+                          RequestToPayStatus:
+                              $ref: "#/components/schemas/OBRequestToPayStatus"
+                          RequestToPayStatusUpdateDateTime:
+                              $ref: "#/components/schemas/OBStatusUpdateDateTime"
+                          RequestToPayStatusDetail:
+                              $ref: "#/components/schemas/OBRequestToPayStatusDetail"
+                          IsPendingCancellation:
+                              $ref: "#/components/schemas/OBPendingCancellation"
+                          CreationDateTime:
+                              $ref: "#/components/schemas/OBCreationDateTime"
+                          Charges:
+                              $ref: "#/components/schemas/Charges"
+                          DebtorAgent:
+                              $ref: "#/components/schemas/OBCreditorAgent"
+                          DebtorAccount:
+                              $ref: "#/components/schemas/OBDebtorAccount"
+                          RequestToPayPurposeCode:
+                              $ref: "#/components/schemas/OBPaymentPurposeCode"
+                          NoteToPayer:
+                              $ref: "#/components/schemas/OBRTPPayerNote"
+                          RequestToPayExpiryWindow:
+                              $ref: "#/components/schemas/OBRTPExpiryWindow"
+                      additionalProperties: false
+
+        OBRequestToPayTransactionId:
+            title: "OBRequestToPayTransactionId"
+            type: "string"
+            description: |
+                The TransactionId associated with a payment generated from the Payment Rails.
+            example: "oz2c8wpre1vy34tx7q"
+
+        OBRequestToPayStatus:
+            title: "OBRequestToPayStatus"
+            description: |
+                Specifies the status of the Request To Pay information group
+                * Initiated: The Request To Pay has been received by the Receiving PASP but not delivered to Payer.
+                * Pending: The Request To Pay is pending a response from the Payer.
+                * Cancelled: The Request To Pay Cancellation request has been accepted by the Receiving PASP.
+                * Accepted: The Request To Pay has been accepted by the Payer.
+                * Expired:  The Request to Pay has expired due to no action from the Payer.
+                * Paid: The Payer has fulfilled and paid the Request To Pay.
+                * Rejected: The Payer has rejected the Request To Pay.
+                * Failed: The Request to Pay has failed (either from the Originating PASP or Receiving PASP).
+                * NotSubmitted: The Sender cancels the Request To Pay before submitting it to the Payer.
+            type: "string"
+            enum:
+                - "Initiated"
+                - "Pending"
+                - "Cancelled"
+                - "Accepted"
+                - "Expired"
+                - "Paid"
+                - "Rejected"
+                - "Failed"
+                - "NotSubmitted"
+            example: Initiated
+
+        OBRequestToPayStatusDetail:
+            title: "OBRequestToPayStatusDetail"
+            description: |
+                This attribute SHOULD only be returned when the resource Status represents a failed state e.g. : Rejected, Failed, Cancelled, Expired.
+            type: "object"
+            required:
+                - "Reason"
+            properties:
+                Reason:
+                    type: "object"
+                    description: |
+                        A Placeholder for any responses that support a Status
+                    required:
+                        - "Code"
+                    properties:
+                        Code:
+                            type: string
+                            description: |
+                                The reason code that represents the downstream System Error.
+                                
+                                **Requests To Pay (RTP)**
+                                
+                                |Status|Reason Code|Description|
+                                |----------|--|--|
+                                |Failed|KSAOB.Originator.AccountIssue|The Originator Account has an issue in processing the RTP request e.g. Account is inactive, locked, dormant|
+                                |Failed|KSAOB.Receiver.AccountIssue|The Receiver Account has an issue in processing the RTP request e.g. Account is inactive, locked, dorman|
+                                |Rejected|KSAOB.Originator.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                |Rejected|KSAOB.Receiver.DuplicateTransaction|The requested transaction is a duplicate of a previous successfully processed transaction|
+                                |Failed|KSAOB.Receiver.Timeout|A timeout has occurred on the payment rails|
+                                |Failed|KSAOB.Receiver.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                |Failed|KSAOB.Originator.SystemUnavailable|The payment rails or downstream system is unavailable|
+                                |Failed, Cancelled|KSAOB.Originator.Other|Any other reason not specified and applicable to the Originator; details MUST be provided in the Detail field|
+                                |Rejected, Failed, Cancelled|KSAOB.Receiver.Other|Any other reason not specified and applicable to the Receiver; details MUST be provided in the Detail field|
+                                |Cancelled|KSAOB.Receiver.CancellationAccepted|The cancellation request has been accepted by the Receiver|
+                                |Expired|KSAOB.Originator.Expired|The Originator requested window for an RTP response has expired|
+                                |Failed|KSAOB.Originator.CancelledBeforeSubmission|The Originator PASP has not submitted the RTP request to the Receiver PASP due to invalid information|
+                            enum:
+                                - "KSAOB.Originator.AccountIssue"
+                                - "KSAOB.Receiver.AccountIssue"
+                                - "KSAOB.Originator.DuplicateTransaction"
+                                - "KSAOB.Receiver.DuplicateTransaction"
+                                - "KSAOB.Receiver.Timeout"
+                                - "KSAOB.Receiver.SystemUnavailable"
+                                - "KSAOB.Originator.SystemUnavailable"
+                                - "KSAOB.Originator.Other"
+                                - "KSAOB.Receiver.Other"
+                                - "KSAOB.Receiver.CancellationAccepted"
+                                - "KSAOB.Originator.Expired"
+                                - "KSAOB.Originator.CancelledBeforeSubmission"
+                        Detail:
+                            type: "string"
+                            description: "Further details that are specific to the Reason Code"
+                    additionalProperties: false
+                Message:
+                    $ref: "#/components/schemas/OBMessage"
+            additionalProperties: false
+
+        OBPendingCancellation:
+            type: boolean
+            description: |
+                This boolean flag is only set to True when:
+                * The PISP initiates an RTP Cancellation with the PASP
+                * The current RTP Status is: Pending
+
+        OBCreditorAgent:
+            title: "OBCreditorAgent"
+            description: |
+                Refers to the Financial Institution.
+            type: "object"
+            required:
+                - "IdentificationType"
+                - "Identification"
+            properties:
+                IdentificationType:
+                    type: "string"
+                    description: |
+                        Refers to the Identification scheme for uniquely identifying the Agent.
+                        
+                        * KSAOB.OTHER: The ID; A Country Code followed by a Bank Code (KSAOB 4 character code). The full list of PASP names and 6 digits IDs are as follows:
+                    enum:
+                        - "KSAOB.OTHER"
+                Identification:
+                    description: |
+                        The Agent is the Country Code followed by a Bank Code (KSAOB 4 character code). The full list of PASP names and 6 digits IDs are as follows"
+                        
+                        | PASP NAME|ID|
+                        |----------|--|
+                        |ALINMA BANK|SAINMA|
+                        |AL RAJHI BANK|SARJHI|
+                        |ARAB NATIONAL BANK|SAARNB|
+                        |BANK AL BILAD|SAALBI|
+                        |BANK AL-JAZIRA|SABJAZ|
+                        |BANK MUSCAT|SABMUS|
+                        |BANQUE SAUDI FRANSI|SABSFR|
+                        |BNP PARIBAS SAUDI ARABIA|SABNPA|
+                        |CREDIT SUISSE SAUDI ARABIA|SACRES|
+                        |DEUTSCHE BANK AG, RIYADH BRANCH|SADEUT|
+                        |EMIRATES NBD PJSC|SAEBIL|
+                        |FIRST ABU DHABI BANK|SAFABM|
+                        |GULF INTERNATIONAL BANK B.S.C., RIYADH|SAGULF|
+                        |INDUSTRIAL AND COMMERCIAL BANK OF CHINA RIYADH BRANCH, SA|SAICBK|
+                        |ISLAMIC DEVELOPMENT BANK|SAISLD|
+                        |J.P.MORGAN SAUDI ARABIA LIMITED|SAJPMG|
+                        |J.P MORGAN CHASE BANK, N.A RIYADH|SACHAS|
+                        |MERILL LYNCH KINGDOM OF SAUDIA ARABIA|SAMLSA|
+                        |NATIONAL BANK OF BAHRAIN|SANBOB|
+                        |NATIONAL BANK OF KUWAIT|SANBOK|
+                        |NATIONAL BANK OF PAKISTAN|SANBPA|
+                        |NEOLEAP|SANEOL|
+                        |RIYAD BANK|SARIBL|
+                        |SAUDI NATIONAL BANK|SANCBK|
+                        |SAUDI ARABIAN MONETARY AUTHORITY|SASAMA|
+                        |SAUDI BRITISH BANK|SASABB|
+                        |SAUDI INVESTMENT BANK|SASIBC|
+                        |STANDARD CHARTERED CAPITAL (SAUDI ARABIA)|SASCBL|
+                        |STC PAY|SASTCP|
+                        |STC Bank|SASTCJ|
+                        |T.C. ZIRAAT BANKASI A.S|SATCZB|
+                    type: "string"
+                    enum:
+                        - "SAINMA"
+                        - "SARJHI"
+                        - "SAALBI"
+                        - "SABJAZ"
+                        - "SABMUS"
+                        - "SABSFR"
+                        - "SABNPA"
+                        - "SACRES"
+                        - "SADEUT"
+                        - "SAEBIL"
+                        - "SAGULF"
+                        - "SAICBK"
+                        - "SAISLD"
+                        - "SAJPMG"
+                        - "SACHAS"
+                        - "SAMLSA"
+                        - "SANBOB"
+                        - "SANBOK"
+                        - "SANBPA"
+                        - "SANCBK"
+                        - "SARIBL"
+                        - "SASAMA"
+                        - "SASABB"
+                        - "SASIBC"
+                        - "SASCBL"
+                        - "SATCZB"
+                        - "SASTCP"
+                        - "SANEOL"
+                        - "SASTCJ"
+                        - "SAFABM"
+                    minLength: 6
+                    maxLength: 6
+                    example: SASAMA
+
+        OBDebtorAccount:
+            title: "OBDebtorAccount"
+            description: "Unambiguous identification of the account of the debtor to which a debit entry will be made."
+            type: "object"
+            required:
+                - "IdentificationType"
+                - "Identification"
+                - "Name"
+            properties:
+                IdentificationType:
+                    $ref: "#/components/schemas/OBExternalAccountIdentificationCode"
+                Identification:
+                    $ref: "#/components/schemas/OBIdentification"
+                Name:
+                    $ref: "#/components/schemas/OBName"
+
+        OBName:
+            title: "OBName"
+            type: "object"
+            description: |
+                The Account Holder Name is the name or names of the Account owner(s) represented at the account level
+            properties:
+                en:
+                    type: "string"
+                    description: "English value of the string"
+                ar:
+                    type: "string"
+                    description: "Arabic value of the string"
+            additionalProperties: false
+
+        OBIdentification:
+            title: "OBIdentification"
+            description: |
+                Identification for the account assigned by the PASP based on the Account Scheme Name.
+                This identification is known by the PSU account owner.
+            type: "string"
+            minLength: 1
+
+        OBExternalAccountIdentificationCode:
+            title: "OBExternalAccountIdentificationCode"
+            description: "Name of the identification scheme, in a coded form as published in an external list."
+            type: "string"
+            enum:
+                - "KSAOB.IBAN"
+                - "KSAOB.AccountNumber"
+                - "KSAOB.UnifiedCommercialNumber"
+                - "KSAOB.Email"
+                - "KSAOB.MobileNumber"
+                - "KSAOB.NationalID"
+                - "KSAOB.IqamaNumber"
+
+        OBRTPPayerNote:
+            title: "OBRTPPayerNote"
+            type: "string"
+            description: |
+                Notes for the Payer
+            minLength: 1
+            maxLength: 256
+
+        OBRTPExpiryWindow:
+            title: "OBRTPExpiryWindow"
+            type: "string"
+            description: |
+                Specifies the Requests to Pay Expiration Window.
+                The time window is based on a custom time format hhh:mm:ss. e.g. 720:00:00 represents a time window of 720 hours, 00 minutes, 00 seconds (30 days).
+                
+                * Please refer to the Business Rules, PIS Limits and Constants, RTP Expiry Window for the limit.
+
+            pattern: '^(00[0-9]|0[1-9][0-9]|[1-6][0-9]{2}|7[01][0-9]|720):[0-5][0-9]:[0-5][0-9]$'
+            example: "48:00:00"
+
+        OBMetaMultiAuthorization:
+            title: "OBMetaMultiAuthorization"
+            type: "object"
+            description: |
+                Meta Data with Multi-Authorization relevant to the payload.
+                For a payment, it represents any Authorizers within the PASP domain that are involved in approving the payment request.
+            properties:
+                MultipleAuthorizers:
+                    type: "object"
+                    description: "Multiple Authorizers Schema"
+                    properties:
+                        TotalRequired:
+                            description: |
+                                The total number of Authorizers required to process the request
+                            type: "number"
+                        Authorizations:
+                            type: "array"
+                            items:
+                                description: |
+                                    Authorizer
+                                type: "object"
+                                properties:
+                                    AuthorizerId:
+                                        description: |
+                                            The Authorizer's Identifier
+                                        type: "string"
+                                    AuthorizerName:
+                                        description: |
+                                            The Authorizer's Name
+                                        type: "string"
+                                    AuthorizerType:
+                                        description: |
+                                            The Type of Authorizer. For example, Financial, Management, etc.
+                                        type: "string"
+                                    AuthorizationDate:
+                                        description: |
+                                            The DateTime of when the Authorization occurred. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2023-04-05T10:43:07+00:00
+                                        type: "string"
+                                        format: "date-time"
+                                    AuthorizationStatus:
+                                        description: |
+                                            The Status reflecting the Authorizer's final decision regarding the request
+                                        type: "string"
+                                        enum:
+                                            - "Pending"
+                                            - "Approved"
+                                            - "Rejected"
+                                additionalProperties: false
+                    additionalProperties: false
+            additionalProperties: false
+
+        consent:
+            description: |
+                
+                A consent in its current state.
+                
+                If the consent has been authorised, then it can be expected that the ASPSP
+                would have patched in `accountIds` and `psuIdentifier` fields.
+                
+                Additionally, the ASPSP may also patch in an arbitrary set of fields along with consent
+                in the `supplementaryInformation` field.
+
+            allOf:
+                - $ref: "#/components/schemas/newConsent"
+                - $ref: "#/components/schemas/patchedConsent"
+
+        multiConsentResponse:
+            type: object
+            required:
+                - data
+                - meta
+            properties:
+                data:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/consent"
+                meta:
+                    $ref: "#/components/schemas/meta"
+
+        ConsentPostResponse:
+            type: object
+            required:
+                - data
+                - meta
+            properties:
+                data:
+                    $ref: "#/components/schemas/newConsent"
+
+                meta:
+                    $ref: "#/components/schemas/meta"
+        EnumRejectedBy:
+            type: string
+            description: |
+                Inform the user responsible for the rejection.
+                1. USER user
+                2. ASPSP transmitting institution
+                3. TPP receiving institution
+            enum:
+                - USER
+                - ASPSP
+                - TPP
+                - INICIADORA
+                - USUARIO
+                - DETENTORA
+            example: USER
+        EnumRejectReasonCode:
+            type: string
+            description: |
+                Defines the reason code why the consent was rejected.
+            enum:
+                - VALOR_INVALIDO
+                - NAO_INFORMADO
+                - FALHA_INFRAESTRUTURA
+                - TEMPO_EXPIRADO_AUTORIZACAO
+                - TEMPO_EXPIRADO_CONSUMO
+                - REJEITADO_USUARIO
+                - CONTAS_ORIGEM_DESTINO_IGUAIS
+                - CONTA_NAO_PERMITE_PAGAMENTO
+                - SALDO_INSUFICIENTE
+                - VALOR_ACIMA_LIMITE
+                - QRCODE_INVALIDO
+            example: VALOR_INVALIDO
+
+        EnumReasonCode:
+            type: string
+            description: |
+                Defines the reason code why the consent was rejected.
+                
+                - CONSENT_EXPIRED – consent that has timed out for authorization.
+                - CUSTOMER_MANUALLY_REJECTED – client performed the rejection of consent manually through interaction at participating institutions.
+                - CUSTOMER_MANUALLY_REVOKED – cliente efetuou a revogação após a autorização do consentimento.
+                - CONSENT_MAX_DATE_REACHED – customer performed the revocation after the authorization of the consent.
+                - CONSENT_TECHNICAL_ISSUE – consent that was rejected due to a technical problem that makes it impossible for the receiving institution to use it, for example: failure associated with the exchange of the AuthCode for the AccessToken, during the Hybid Flow process.
+                - INTERNAL_SECURITY_REASON – consent that was rejected due to the security policies applied by the transmitting institution.
+            enum:
+                - CONSENT_EXPIRED
+                - CUSTOMER_MANUALLY_REJECTED
+                - CUSTOMER_MANUALLY_REVOKED
+                - CONSENT_MAX_DATE_REACHED
+                - CONSENT_TECHNICAL_ISSUE
+                - INTERNAL_SECURITY_REASON
+                - NAO_INFORMADO
+                - FALHA_INFRAESTRUTURA
+                - TEMPO_EXPIRADO_AUTORIZACAO
+                - REJEITADO_USUARIO
+                - CONTAS_ORIGEM_DESTINO_IGUAIS
+                - CONTA_NAO_PERMITE_PAGAMENTO
+                - SALDO_INSUFICIENTE
+                - VALOR_ACIMA_LIMITE
+            example: CONSENT_EXPIRED
+            additionalProperties: true
+
+        RejectedReason:
+            type: object
+            description: Defines the reason why the consent was rejected.
+            required:
+                - code
+            properties:
+                code:
+                    $ref: "#/components/schemas/EnumReasonCode"
+                detail:
+                    type: string
+                    pattern: '[\w\W\s]*'
+                    maxLength: 2048
+                additionalInformation:
+                    type: string
+                    description: Contains additional information at the discretion of the broadcaster.
+                    maxLength: 140
+                    pattern: '[\w\W\s]*'
+                    example: Multi-level confirmation time exceeded.
+
+        RevokeConsent:
+            type: object
+            required:
+                - revokedBy
+            properties:
+                revokedBy:
+                    type: string
+                    enum:
+                        - ADR
+                        - CONSUMER
+                        - COLLEAGUE
+                        - REGISTER
+                        - EXPIRATION
+                        - AMENDMENT
+                revokedByPsu:
+                    type: object
+                    properties:
+                        userId:
+                            type: string
+                clientId:
+                    type: string
+
+        OBMessage:
+            title: "OBMessage"
+            description: "A description of the error that occurred. e.g., 'A mandatory field isn't supplied' or 'RequestedExecutionDateTime must be in future'\nKSAOB doesn't standardise this field"
+            type: "object"
+            required:
+                - "en"
+            properties:
+                en:
+                    type: "string"
+                    description: "English value of the string"
+                    #minLenght: 1
+                    maxLength: 500
+                ar:
+                    type: "string"
+                    description: "Arabic value of the string"
+                    #minLenght: 1
+                    #maxLenght: 500
+            additionalProperties:  false
+
+
+
+    parameters:
+        consentId:
+            name: consentId
+            in: path
+            schema:
+                type: string
+            required: true
+            description: |
+                Identifies the consent by an id
+        paymentId:
+            name: paymentId
+            in: path
+            schema:
+                type: string
+            required: true
+            description: |
+                Identifies the payment by an id
+
+        userId:
+            name: userId
+            in: path
+            schema:
+                type: string
+            required: true
+            description: |
+                Identifies the PSU associated with a consent.
+                
+                This should match up with the `psuIdentifier.userId` field.
+
+        page:
+            name: page
+            in: query
+            schema:
+                type: string
+#                format: int32
+                minimum: 1
+            required: false
+            description: |
+                The page number to retrieve in a paginated response
+
+        pageSize:
+            name: pageSize
+            in: query
+            schema:
+                type: string
+#                format: int32
+                minimum: 1
+            required: false
+            description: |
+                The maximum rows to retrieve in a given page. Defaults to 25 if not specified.
+
+        consentType:
+            name: consentType
+            in: query
+            schema:
+                type: string
+            description: Consents of particular accountId
+            required: false
+
+        status:
+            name: status
+            in: query
+            schema:
+                type: string
+            description: Status of the consent
+            required: false
+
+    securitySchemes:
+        api_key:
+            type: apiKey
+            name: api_key
+            in: header
+            description: TLS-MA and Jws in authorization header
